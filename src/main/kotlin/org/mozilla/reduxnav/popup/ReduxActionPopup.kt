@@ -1,10 +1,11 @@
 package org.mozilla.reduxnav.popup
 
-import com.intellij.ide.util.PsiElementListCellRenderer
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.psi.PsiElement
+import com.intellij.psi.util.PsiEditorUtil
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBList
@@ -17,7 +18,7 @@ import java.awt.event.MouseEvent
 import javax.swing.JList
 
 object ReduxActionPopup {
-    fun show(project: Project, action: ActionInfo) {
+    fun show(project: Project, anchor: PsiElement, action: ActionInfo) {
         val graph = ReduxUsageFinder(project).buildGraph(action)
         val entries = buildEntries(graph.usages)
         val list = JBList(entries)
@@ -42,10 +43,15 @@ object ReduxActionPopup {
             }
         })
 
-        popup.showInFocusCenter()
+        val editor = PsiEditorUtil.findEditor(anchor) ?: FileEditorManager.getInstance(project).selectedTextEditor
+        if (editor != null) {
+            popup.showInBestPositionFor(editor)
+        } else {
+            popup.showCenteredInCurrentWindow(project)
+        }
     }
 
-    private fun buildEntries(usages: List<ReduxUsage>): List<PopupEntry> {
+    internal fun buildEntries(usages: List<ReduxUsage>): List<PopupEntry> {
         val result = mutableListOf<PopupEntry>()
         val grouped = usages.groupBy { it.kind }
         listOf(ReduxUsageKind.DISPATCH, ReduxUsageKind.MIDDLEWARE, ReduxUsageKind.REDUCER, ReduxUsageKind.OTHER).forEach { kind ->
@@ -57,7 +63,7 @@ object ReduxActionPopup {
     }
 }
 
-private sealed interface PopupEntry {
+internal sealed interface PopupEntry {
     data class Header(val text: String) : PopupEntry
     data class UsageEntry(val usage: ReduxUsage) : PopupEntry
 }

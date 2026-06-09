@@ -21,12 +21,15 @@ class ReduxUsageClassifier(
     }
 
     private fun isDispatch(element: PsiElement): Boolean {
-        val call = element.ancestors().filterIsInstance<KtCallExpression>().firstOrNull() ?: return false
-        val calleeName = call.calleeExpression?.text
-        if (calleeName in conventions.dispatchMethodNames) return true
+        return element.ancestors()
+            .filterIsInstance<KtCallExpression>()
+            .any { call ->
+                val calleeName = call.calleeExpression?.text
+                if (calleeName in conventions.dispatchMethodNames) return@any true
 
-        val parentText = call.parent?.text.orEmpty()
-        return conventions.dispatchMethodNames.any { parentText.contains(".$it(") }
+                val parentText = call.parent?.text.orEmpty()
+                conventions.dispatchMethodNames.any { parentText.contains(".$it(") }
+            }
     }
 
     private fun isMiddleware(element: PsiElement): Boolean {
