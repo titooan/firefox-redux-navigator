@@ -1,0 +1,15 @@
+<idea-plugin>
+    <id>org.mozilla.firefox-redux-navigator</id>
+    <name>Firefox Redux Navigator</name>
+    <vendor email="tthibaud@mozilla.com">Mozilla</vendor>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.java</depends>
+    <depends>org.jetbrains.kotlin</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <codeInsight.lineMarkerProvider
+            language="kotlin"
+            implementationClass="org.mozilla.reduxnav.gutter.ReduxActionLineMarkerProvider"/>
+    </extensions>
+</idea-plugin>
