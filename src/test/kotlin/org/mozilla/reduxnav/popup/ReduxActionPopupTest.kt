@@ -4,12 +4,20 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.model.toSmartPointer
-import java.awt.Component
 import java.awt.Point
 import java.awt.event.MouseEvent
+import java.io.File
 import javax.swing.JPanel
 
 class ReduxActionPopupTest : BasePlatformTestCase() {
+    override fun tearDown() {
+        try {
+            ReduxActionPopup.resetActivePopupForTests()
+        } finally {
+            super.tearDown()
+        }
+    }
+
     fun testBuildEntriesGroupsUsagesInExpectedSections() {
         val dispatch = usage("dispatch(AddItemForRemoval)", ReduxUsageKind.DISPATCH)
         val middleware = usage("AddItemForRemoval -> middleware", ReduxUsageKind.MIDDLEWARE)
@@ -80,11 +88,22 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
             kind = ReduxUsageKind.DISPATCH,
             filePath = "/work/project/src/test/kotlin/DownloadActionsTest.kt"
         )
-        val list = ReduxActionPopup.createList(listOf(PopupEntry.UsageEntry(usage)))
+        val presentation = ReduxActionPopup.usagePresentation(usage, "AddItemForRemoval", false)
 
-        val component = list.cellRenderer.getListCellRendererComponent(list, list.model.getElementAt(0), 0, false, false) as Component
+        assertEquals("DownloadActionsTest.kt", usage.fileName)
+        assertEquals(ReduxActionPopup.testOccurrenceBackground(usage.filePath), presentation.background)
+        assertEquals("<html>dispatch(<b>AddItemForRemoval</b>)</html>", presentation.codeHtml)
+    }
 
-        assertEquals(ReduxActionPopup.testOccurrenceBackground(usage.filePath), component.background)
+    fun testRegisterActivePopupCancelsPreviousPopup() {
+        val first = RecordingPopupHandle()
+        val second = RecordingPopupHandle()
+
+        ReduxActionPopup.registerActivePopup(first)
+        ReduxActionPopup.registerActivePopup(second)
+
+        assertEquals(1, first.cancelCalls)
+        assertEquals(0, second.cancelCalls)
     }
 
     private fun usage(line: String, kind: ReduxUsageKind, filePath: String? = null): ReduxUsage {
@@ -101,6 +120,7 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
         return ReduxUsage(
             kind = kind,
             displayText = line,
+            fileName = File(filePath ?: file.virtualFile.path).name,
             filePath = filePath ?: file.virtualFile.path,
             line = 2,
             element = element.toSmartPointer()
@@ -111,6 +131,14 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
         return when (entry) {
             is PopupEntry.Header -> entry.text
             is PopupEntry.UsageEntry -> entry.usage.displayText
+        }
+    }
+
+    private class RecordingPopupHandle : PopupHandle {
+        var cancelCalls: Int = 0
+
+        override fun cancel() {
+            cancelCalls += 1
         }
     }
 }

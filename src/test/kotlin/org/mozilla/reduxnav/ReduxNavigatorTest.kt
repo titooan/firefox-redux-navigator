@@ -66,8 +66,8 @@ class ReduxNavigatorTest : BasePlatformTestCase() {
         val selector = qualifiedExpression.selectorExpression as KtNameReferenceExpression
         val provider = ReduxActionLineMarkerProvider()
 
-        assertNull(provider.getLineMarkerInfo(receiver.firstChild))
-        assertNotNull(provider.getLineMarkerInfo(selector.firstChild))
+        assertNull(provider.markerForElement(receiver.firstChild))
+        assertNotNull(provider.markerForElement(selector.firstChild))
     }
 
     fun testEditorShowsOnlyOneGutterForQualifiedActionReference() {
@@ -124,7 +124,41 @@ class ReduxNavigatorTest : BasePlatformTestCase() {
         val importedReference = importDirective.importedReference ?: error("Expected imported reference")
         val provider = ReduxActionLineMarkerProvider()
 
-        assertNull(provider.getLineMarkerInfo(importedReference.firstChild))
+        assertNull(provider.markerForElement(importedReference.firstChild))
+    }
+
+    fun testGutterDoesNotAppearOnQualifiedImportSelector() {
+        myFixture.addFileToProject(
+            "sample/Actions.kt",
+            """
+            package sample
+
+            sealed class DownloadUIAction {
+                data object AddItemForRemoval : DownloadUIAction()
+            }
+            """.trimIndent()
+        )
+        myFixture.configureByText(
+            "Usage.kt",
+            """
+            package sample.other
+
+            import sample.DownloadUIAction.AddItemForRemoval
+
+            fun trigger() {
+                println(AddItemForRemoval::class)
+            }
+            """.trimIndent()
+        )
+
+        val importDirective = PsiTreeUtil.findChildrenOfType(myFixture.file, KtImportDirective::class.java)
+            .single { it.text.contains("AddItemForRemoval") }
+        val importedReference = importDirective.importedReference ?: error("Expected imported reference")
+        val importedLeaf = PsiTreeUtil.findChildrenOfType(importedReference, KtNameReferenceExpression::class.java)
+            .single { it.text == "AddItemForRemoval" }
+        val provider = ReduxActionLineMarkerProvider()
+
+        assertNull(provider.markerForElement(importedLeaf.firstChild))
     }
 
     fun testUsageGraphContainsOnlySpecificActionUsages() {
@@ -246,11 +280,11 @@ class ReduxNavigatorTest : BasePlatformTestCase() {
         val provider = ReduxActionLineMarkerProvider()
 
         assertNotNull("Expected gutter on ExitEditMode declaration name",
-            provider.getLineMarkerInfo(objectDecl.nameIdentifier!!))
+            provider.markerForElement(objectDecl.nameIdentifier!!))
 
         val supertypeLeaf = PsiTreeUtil.getDeepestFirst(objectDecl.superTypeListEntries.first())
         assertNull("Expected no gutter on DownloadUIAction supertype reference",
-            provider.getLineMarkerInfo(supertypeLeaf))
+            provider.markerForElement(supertypeLeaf))
     }
 
     fun testGutterOnDeclarationResolveShowsOnlyThatActionUsages() {

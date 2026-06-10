@@ -2,8 +2,10 @@ package org.mozilla.reduxnav.gutter
 
 import com.intellij.codeInsight.daemon.LineMarkerInfo
 import com.intellij.codeInsight.daemon.LineMarkerProviderDescriptor
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.psi.PsiElement
+import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
@@ -16,27 +18,56 @@ import java.awt.event.MouseEvent
 import javax.swing.Icon
 
 class ReduxActionLineMarkerProvider : LineMarkerProviderDescriptor() {
+    private val logger = Logger.getInstance(ReduxActionLineMarkerProvider::class.java)
     private val resolver = ActionSymbolResolver()
 
-    override fun getName(): String = "Firefox Redux action navigation"
+    override fun getName(): String = "Redux flow"
 
     override fun getIcon(): Icon = ReduxIcons.Redux
 
-    override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
+    override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? = null
+
+    override fun collectSlowLineMarkers(
+        elements: List<PsiElement>,
+        result: MutableCollection<in LineMarkerInfo<*>>
+    ) {
+        logger.info("[redux-nav] collectSlowLineMarkers elements=${elements.size}")
+        elements.mapNotNullTo(result) { markerForElement(it) }
+    }
+
+    internal fun markerForElement(element: PsiElement): LineMarkerInfo<*>? {
         // Case 1: element is the name identifier of an action class/object declaration
         val declaringClass = (element.parent as? KtClassOrObject)?.takeIf { it.nameIdentifier == element }
         if (declaringClass != null) {
             val action = resolver.resolveDeclaration(declaringClass) ?: return null
+            logCandidate("declaration", element, "resolved=${action.displayName}")
             return createMarker(element, action)
         }
 
         // Case 2: element is a reference to an action at a usage site
         val referenceExpression = element.parent as? KtNameReferenceExpression ?: return null
-        if (referenceExpression.firstChild != element) return null
-        if (referenceExpression.isInImportDirective()) return null
-        if (referenceExpression.isQualifiedReceiver()) return null
-        if (referenceExpression.isInSuperTypeList()) return null
-        val action = resolver.resolve(referenceExpression) ?: return null
+        if (referenceExpression.firstChild != element) {
+            logCandidate("usage", element, "skip=not-first-child parent=${referenceExpression.javaClass.simpleName}")
+            return null
+        }
+        if (referenceExpression.isInImportDirective()) {
+            logCandidate("usage", element, "skip=import-directive text=${referenceExpression.text}")
+            return null
+        }
+        if (referenceExpression.isQualifiedReceiver()) {
+            logCandidate("usage", element, "skip=qualified-receiver text=${referenceExpression.text}")
+            return null
+        }
+        if (referenceExpression.isInSuperTypeList()) {
+            logCandidate("usage", element, "skip=supertype-list text=${referenceExpression.text}")
+            return null
+        }
+        val action = resolver.resolve(referenceExpression)
+        if (action == null) {
+            logCandidate("usage", element, "skip=unresolved text=${referenceExpression.text}")
+            return null
+        }
+        logCandidate("usage", element, "resolved=${action.displayName}")
         return createMarker(element, action)
     }
 
@@ -46,7 +77,13 @@ class ReduxActionLineMarkerProvider : LineMarkerProviderDescriptor() {
             element.textRange,
             ReduxIcons.Redux,
             { "Show Redux flow for ${action.displayName}" },
-            { event: MouseEvent?, elt: PsiElement -> ReduxActionPopup.show(elt.project, action, event) },
+            { event: MouseEvent?, elt: PsiElement ->
+                logger.info(
+                    "[redux-nav] gutter-click action=${action.displayName} file=${elt.containingFile?.virtualFile?.path} " +
+                        "point=${event?.point} component=${event?.component?.javaClass?.name}"
+                )
+                ReduxActionPopup.show(elt.project, action, event)
+            },
             GutterIconRenderer.Alignment.LEFT,
             { "Redux flow" }
         )
@@ -57,8 +94,13 @@ class ReduxActionLineMarkerProvider : LineMarkerProviderDescriptor() {
     }
 
     private fun KtNameReferenceExpression.isInImportDirective(): Boolean =
-        generateSequence(parent) { it.parent }.any { it is com.intellij.psi.PsiImportStatementBase }
+        generateSequence(this as PsiElement?) { it.parent }.any { it is KtImportDirective }
 
     private fun KtNameReferenceExpression.isInSuperTypeList(): Boolean =
         generateSequence(parent) { it.parent }.any { it is KtSuperTypeListEntry }
+
+    private fun logCandidate(stage: String, element: PsiElement, outcome: String) {
+        val file = element.containingFile?.virtualFile?.path ?: element.containingFile?.name ?: "<unknown>"
+        logger.info("[redux-nav] $stage file=$file text=${element.text} outcome=$outcome")
+    }
 }
