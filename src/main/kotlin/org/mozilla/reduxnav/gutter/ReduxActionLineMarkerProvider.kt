@@ -33,6 +33,7 @@ class ReduxActionLineMarkerProvider : LineMarkerProviderDescriptor() {
         // Case 2: element is a reference to an action at a usage site
         val referenceExpression = element.parent as? KtNameReferenceExpression ?: return null
         if (referenceExpression.firstChild != element) return null
+        if (referenceExpression.isInImportDirective()) return null
         if (referenceExpression.isQualifiedReceiver()) return null
         if (referenceExpression.isInSuperTypeList()) return null
         val action = resolver.resolve(referenceExpression) ?: return null
@@ -45,7 +46,7 @@ class ReduxActionLineMarkerProvider : LineMarkerProviderDescriptor() {
             element.textRange,
             ReduxIcons.Redux,
             { "Show Redux flow for ${action.displayName}" },
-            { _: MouseEvent?, elt: PsiElement -> ReduxActionPopup.show(elt.project, elt, action) },
+            { event: MouseEvent?, elt: PsiElement -> ReduxActionPopup.show(elt.project, action, event) },
             GutterIconRenderer.Alignment.LEFT,
             { "Redux flow" }
         )
@@ -54,6 +55,9 @@ class ReduxActionLineMarkerProvider : LineMarkerProviderDescriptor() {
         val qualified = parent as? KtDotQualifiedExpression ?: return false
         return qualified.receiverExpression == this
     }
+
+    private fun KtNameReferenceExpression.isInImportDirective(): Boolean =
+        generateSequence(parent) { it.parent }.any { it is com.intellij.psi.PsiImportStatementBase }
 
     private fun KtNameReferenceExpression.isInSuperTypeList(): Boolean =
         generateSequence(parent) { it.parent }.any { it is KtSuperTypeListEntry }

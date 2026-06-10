@@ -4,6 +4,10 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.model.toSmartPointer
+import java.awt.Component
+import java.awt.Point
+import java.awt.event.MouseEvent
+import javax.swing.JPanel
 
 class ReduxActionPopupTest : BasePlatformTestCase() {
     fun testBuildEntriesGroupsUsagesInExpectedSections() {
@@ -46,7 +50,44 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
         )
     }
 
-    private fun usage(line: String, kind: ReduxUsageKind): ReduxUsage {
+    fun testPopupPointUsesClickCoordinates() {
+        val component = JPanel()
+        val event = MouseEvent(component, MouseEvent.MOUSE_CLICKED, 0L, 0, 17, 29, 1, false)
+
+        assertEquals(Point(17, 29), ReduxActionPopup.popupPoint(event))
+    }
+
+    fun testCreateListCapsVisibleRows() {
+        val entries = (0 until 20).map { PopupEntry.Header("Item $it") }
+
+        val list = ReduxActionPopup.createList(entries)
+
+        assertEquals(12, list.visibleRowCount)
+    }
+
+    fun testPopupContentIsWrappedInScrollPane() {
+        val entries = listOf(PopupEntry.Header("Item"))
+        val list = ReduxActionPopup.createList(entries)
+
+        val content = ReduxActionPopup.createContent(list)
+
+        assertSame(list, content.viewport.view)
+    }
+
+    fun testTestOccurrencesUseGreenBackground() {
+        val usage = usage(
+            line = "dispatch(AddItemForRemoval)",
+            kind = ReduxUsageKind.DISPATCH,
+            filePath = "/work/project/src/test/kotlin/DownloadActionsTest.kt"
+        )
+        val list = ReduxActionPopup.createList(listOf(PopupEntry.UsageEntry(usage)))
+
+        val component = list.cellRenderer.getListCellRendererComponent(list, list.model.getElementAt(0), 0, false, false) as Component
+
+        assertEquals(ReduxActionPopup.testOccurrenceBackground(usage.filePath), component.background)
+    }
+
+    private fun usage(line: String, kind: ReduxUsageKind, filePath: String? = null): ReduxUsage {
         val file = myFixture.configureByText(
             "${kind.name.lowercase()}.kt",
             """
@@ -60,7 +101,7 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
         return ReduxUsage(
             kind = kind,
             displayText = line,
-            filePath = file.virtualFile.path,
+            filePath = filePath ?: file.virtualFile.path,
             line = 2,
             element = element.toSmartPointer()
         )

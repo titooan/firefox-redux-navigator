@@ -3,6 +3,7 @@ package org.mozilla.reduxnav
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtObjectDeclaration
 import org.mozilla.reduxnav.analysis.ActionSymbolResolver
@@ -92,6 +93,38 @@ class ReduxNavigatorTest : BasePlatformTestCase() {
         val gutters = myFixture.findGuttersAtCaret()
 
         assertSize(1, gutters)
+    }
+
+    fun testGutterDoesNotAppearOnImportLines() {
+        myFixture.addFileToProject(
+            "sample/Actions.kt",
+            """
+            package sample
+
+            sealed class DownloadUIAction {
+                data object AddItemForRemoval : DownloadUIAction()
+            }
+            """.trimIndent()
+        )
+        myFixture.configureByText(
+            "Usage.kt",
+            """
+            package sample.other
+
+            import sample.DownloadUIAction
+
+            fun trigger() {
+                println(DownloadUIAction::class)
+            }
+            """.trimIndent()
+        )
+
+        val importDirective = PsiTreeUtil.findChildrenOfType(myFixture.file, KtImportDirective::class.java)
+            .single { it.text.contains("DownloadUIAction") }
+        val importedReference = importDirective.importedReference ?: error("Expected imported reference")
+        val provider = ReduxActionLineMarkerProvider()
+
+        assertNull(provider.getLineMarkerInfo(importedReference.firstChild))
     }
 
     fun testUsageGraphContainsOnlySpecificActionUsages() {
