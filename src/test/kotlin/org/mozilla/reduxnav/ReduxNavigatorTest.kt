@@ -6,6 +6,7 @@ import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtObjectDeclaration
+import org.jetbrains.kotlin.psi.KtUserType
 import org.mozilla.reduxnav.analysis.ActionSymbolResolver
 import org.mozilla.reduxnav.analysis.ReduxUsageFinder
 import org.mozilla.reduxnav.gutter.ReduxActionLineMarkerProvider
@@ -285,6 +286,71 @@ class ReduxNavigatorTest : BasePlatformTestCase() {
         val supertypeLeaf = PsiTreeUtil.getDeepestFirst(objectDecl.superTypeListEntries.first())
         assertNull("Expected no gutter on DownloadUIAction supertype reference",
             provider.markerForElement(supertypeLeaf))
+    }
+
+    fun testIsPatternShowsGutterOnlyOnQualifiedActionSelector() {
+        myFixture.configureByText(
+            "DownloadActions.kt",
+            """
+            interface Action
+            sealed class DownloadUIAction : Action {
+                data class SettingsIconClicked(val tabId: String) : DownloadUIAction()
+            }
+
+            fun handle(action: Action) = when (action) {
+                is DownloadUIAction.SettingsIconClicked -> action.tabId
+                else -> ""
+            }
+            """.trimIndent()
+        )
+
+        val userType = PsiTreeUtil.findChildrenOfType(myFixture.file, KtUserType::class.java)
+            .single { it.text == "DownloadUIAction.SettingsIconClicked" }
+        val references = PsiTreeUtil.findChildrenOfType(userType, KtNameReferenceExpression::class.java)
+        val receiver = references.single { it.text == "DownloadUIAction" }
+        val selector = references.single { it.text == "SettingsIconClicked" }
+        val provider = ReduxActionLineMarkerProvider()
+
+        assertNull(provider.markerForElement(receiver.firstChild))
+        assertNotNull(provider.markerForElement(selector.firstChild))
+    }
+
+    fun testActionVariablesDoNotShowGuttersInMiddlewareFlow() {
+        myFixture.configureByText(
+            "DownloadNavigationMiddleware.kt",
+            """
+            interface Middleware<S, A>
+            interface Store<S, A>
+
+            sealed class DownloadUIAction {
+                data object SettingsIconClicked : DownloadUIAction()
+            }
+
+            class DownloadUIState
+
+            class DownloadNavigationMiddleware : Middleware<DownloadUIState, DownloadUIAction> {
+                fun invoke(
+                    store: Store<DownloadUIState, DownloadUIAction>,
+                    next: (DownloadUIAction) -> Unit,
+                    action: DownloadUIAction,
+                ) {
+                    next(action)
+                    when (action) {
+                        is DownloadUIAction.SettingsIconClicked -> Unit
+                    }
+                }
+            }
+            """.trimIndent()
+        )
+
+        val references = PsiTreeUtil.findChildrenOfType(myFixture.file, KtNameReferenceExpression::class.java)
+        val actionReferences = references.filter { it.text == "action" }
+        val provider = ReduxActionLineMarkerProvider()
+
+        assertEquals(2, actionReferences.size)
+        actionReferences.forEach { reference ->
+            assertNull(provider.markerForElement(reference.firstChild))
+        }
     }
 
     fun testGutterOnDeclarationResolveShowsOnlyThatActionUsages() {

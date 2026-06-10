@@ -5,11 +5,17 @@ import com.intellij.codeInsight.daemon.LineMarkerProviderDescriptor
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.markup.GutterIconRenderer
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiLocalVariable
+import com.intellij.psi.PsiParameter
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
+import org.jetbrains.kotlin.psi.KtParameter
+import org.jetbrains.kotlin.psi.KtProperty
 import org.jetbrains.kotlin.psi.KtSuperTypeListEntry
+import org.jetbrains.kotlin.psi.KtUserType
+import org.jetbrains.kotlin.idea.references.mainReference
 import org.mozilla.reduxnav.analysis.ActionSymbolResolver
 import org.mozilla.reduxnav.icons.ReduxIcons
 import org.mozilla.reduxnav.model.ActionInfo
@@ -54,8 +60,16 @@ class ReduxActionLineMarkerProvider : LineMarkerProviderDescriptor() {
             logCandidate("usage", element, "skip=import-directive text=${referenceExpression.text}")
             return null
         }
+        if (referenceExpression.isValueReference()) {
+            logCandidate("usage", element, "skip=value-reference text=${referenceExpression.text}")
+            return null
+        }
         if (referenceExpression.isQualifiedReceiver()) {
             logCandidate("usage", element, "skip=qualified-receiver text=${referenceExpression.text}")
+            return null
+        }
+        if (referenceExpression.isQualifiedTypeQualifier()) {
+            logCandidate("usage", element, "skip=qualified-type-qualifier text=${referenceExpression.text}")
             return null
         }
         if (referenceExpression.isInSuperTypeList()) {
@@ -91,6 +105,22 @@ class ReduxActionLineMarkerProvider : LineMarkerProviderDescriptor() {
     private fun KtNameReferenceExpression.isQualifiedReceiver(): Boolean {
         val qualified = parent as? KtDotQualifiedExpression ?: return false
         return qualified.receiverExpression == this
+    }
+
+    private fun KtNameReferenceExpression.isQualifiedTypeQualifier(): Boolean {
+        return generateSequence(parent) { it.parent }
+            .filterIsInstance<KtUserType>()
+            .any { userType ->
+                userType.text.contains(".") &&
+                    (userType.qualifier?.text == text || userType.text.startsWith("$text."))
+            }
+    }
+
+    private fun KtNameReferenceExpression.isValueReference(): Boolean {
+        return when (mainReference.resolve()) {
+            is KtParameter, is KtProperty, is PsiParameter, is PsiLocalVariable -> true
+            else -> false
+        }
     }
 
     private fun KtNameReferenceExpression.isInImportDirective(): Boolean =
