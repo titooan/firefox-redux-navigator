@@ -11,7 +11,16 @@ import org.mozilla.reduxnav.model.toSmartPointer
 class ActionSymbolResolver(
     private val conventions: FirefoxReduxConventions = FirefoxReduxConventions()
 ) {
-    fun resolveDeclaration(classOrObject: KtClassOrObject): ActionInfo? {
+    fun resolveDeclaration(element: PsiElement): ActionInfo? {
+        val classOrObject = when (element) {
+            is KtClassOrObject -> element
+            else -> {
+                val parent = element.parent as? KtClassOrObject ?: return null
+                if (parent.nameIdentifier != element) return null
+                parent
+            }
+        }
+
         val name = classOrObject.name ?: return null
         if (!looksLikeAction(classOrObject, name)) return null
         val fqName = classOrObject.fqName?.asString() ?: name
@@ -22,10 +31,12 @@ class ActionSymbolResolver(
         )
     }
 
+    fun resolveDeclaration(classOrObject: KtClassOrObject): ActionInfo? = resolveDeclaration(classOrObject as PsiElement)
+
     fun resolve(element: PsiElement): ActionInfo? {
-        val referenceExpression = element.parent as? KtNameReferenceExpression ?: element as? KtNameReferenceExpression
-        val referenceName = referenceExpression?.getReferencedName() ?: return null
-        val resolved = referenceExpression?.mainReference?.resolve() ?: return null
+        val referenceExpression = element.parent as? KtNameReferenceExpression ?: element as? KtNameReferenceExpression ?: return null
+        val referenceName = referenceExpression.getReferencedName()
+        val resolved = referenceExpression.mainReference.resolve() ?: return null
         val declaration = findActionDeclaration(resolved, referenceName) ?: return null
         val name = declaration.name ?: return null
 

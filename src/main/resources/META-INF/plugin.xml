@@ -11,6 +11,8 @@
         <codeInsight.lineMarkerProvider
             language="kotlin"
             implementationClass="org.mozilla.reduxnav.gutter.ReduxActionLineMarkerProvider"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="org.mozilla.reduxnav.inlay.ReduxActionInlayHintsProvider"/>
+        <postStartupActivity implementation="org.mozilla.reduxnav.startup.ReduxNavigatorSandboxStartupActivity"/>
     </extensions>
 
     <extensions defaultExtensionNs="org.jetbrains.kotlin">

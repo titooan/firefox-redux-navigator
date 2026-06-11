@@ -24,6 +24,7 @@ data class ActionInfo(
 data class ReduxUsage(
     val kind: ReduxUsageKind,
     val displayText: String,
+    val fileName: String,
     val filePath: String,
     val line: Int,
     val element: SmartPsiElementPointer<PsiElement>
