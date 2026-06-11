@@ -1,34 +1,46 @@
 package org.mozilla.reduxnav.popup
 
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileTypes.FileTypeManager
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.openapi.ui.popup.LightweightWindowEvent
 import com.intellij.openapi.ui.popup.JBPopupListener
-import com.intellij.ui.ColoredListCellRenderer
+import com.intellij.openapi.ui.popup.LightweightWindowEvent
 import com.intellij.ui.JBColor
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.util.ui.JBUI
 import org.mozilla.reduxnav.analysis.ReduxUsageFinder
+import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import java.awt.Color
 import java.awt.Component
+import java.awt.Dimension
+import java.awt.BorderLayout
+import java.awt.Toolkit
+import java.awt.event.AWTEventListener
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Point
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import javax.swing.DefaultListModel
 import javax.swing.Icon
+import javax.swing.JCheckBox
+import javax.swing.JComponent
+import javax.swing.JComboBox
 import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.SwingUtilities
 import javax.swing.SwingConstants
 
 private val TEST_OCCURRENCE_BACKGROUND = JBColor(
@@ -51,13 +63,12 @@ object ReduxActionPopup {
             "[redux-nav] popup-show-start action=${action.displayName} project=${project.name} " +
                 "point=${clickEvent?.point} component=${clickEvent?.component?.javaClass?.name} active=${activePopup?.debugName()}"
         )
-        val graph = ReduxUsageFinder(project).buildGraph(action)
-        val entries = buildEntries(graph.usages, action.displayName)
-        val list = createList(entries)
-        val scrollPane = createContent(list)
+        val list = createList(loadingEntries())
+        val controller = PopupListController(list)
+        val content = createPopupContent(controller)
 
         val popup = JBPopupFactory.getInstance()
-            .createComponentPopupBuilder(scrollPane, list)
+            .createComponentPopupBuilder(content, list)
             .setTitle("Redux flow: ${action.displayName}")
             .setResizable(true)
             .setMovable(true)
@@ -66,23 +77,38 @@ object ReduxActionPopup {
             .createPopup()
         val popupHandle = JBPopupHandle(popup)
         registerActivePopup(popupHandle)
+        popupHandle.installOutsideClickCancellation()
         popup.addListener(object : JBPopupListener {
             override fun onClosed(event: LightweightWindowEvent) {
                 logger.info(
                     "[redux-nav] popup-closed action=${action.displayName} ok=${event.isOk} active=${activePopup?.debugName()} closed=${popupHandle.debugName()}"
                 )
+                popupHandle.removeOutsideClickCancellation()
+                popupHandle.cancelLoading()
                 clearActivePopup(popupHandle)
             }
         })
 
         list.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
-                if (e.clickCount < 2) return
-                val entry = list.selectedValue as? PopupEntry.UsageEntry ?: return
-                val target = entry.usage.element.element ?: return
-                val file = target.containingFile?.virtualFile ?: return
-                OpenFileDescriptor(project, file, target.textOffset).navigate(true)
-                popup.cancel()
+                val index = list.locationToIndex(e.point)
+                if (index < 0) return
+
+                when (val entry = list.model.getElementAt(index)) {
+                    is PopupEntry.Header -> {
+                        if (e.clickCount == 1) {
+                            controller.toggle(entry.kind)
+                            popup.setSize(popup.content.preferredSize)
+                        }
+                    }
+                    is PopupEntry.UsageEntry -> {
+                        if (e.clickCount < 2) return
+                        val target = entry.usage.element.element ?: return
+                        val file = target.containingFile?.virtualFile ?: return
+                        OpenFileDescriptor(project, file, target.textOffset).navigate(true)
+                        popup.cancel()
+                    }
+                }
             }
         })
 
@@ -95,6 +121,8 @@ object ReduxActionPopup {
             popup.showCenteredInCurrentWindow(project)
         }
         logger.info("[redux-nav] popup-show-done action=${action.displayName} active=${activePopup?.debugName()}")
+
+        popupHandle.loadEntries(project, action, controller, popup)
     }
 
     internal fun popupPoint(clickEvent: MouseEvent?): Point? =
@@ -122,24 +150,40 @@ object ReduxActionPopup {
     }
 
     internal fun createList(entries: List<PopupEntry>): JBList<PopupEntry> {
-        val list = JBList(entries)
-        list.visibleRowCount = minOf(entries.size, MAX_VISIBLE_ROWS)
+        val list = JBList(createModel(entries))
+        list.visibleRowCount = visibleRowCount(entries)
         list.cellRenderer = EntryRenderer()
         return list
     }
 
+    internal fun replaceEntries(list: JBList<PopupEntry>, entries: List<PopupEntry>) {
+        list.model = createModel(entries)
+        list.visibleRowCount = visibleRowCount(entries)
+        list.revalidate()
+        list.repaint()
+    }
+
     internal fun createContent(list: JBList<PopupEntry>) = JBScrollPane(list)
 
-    internal fun testOccurrenceBackground(filePath: String): Color? {
-        val normalized = filePath.replace('\\', '/')
-        if ("/src/test/" in normalized || "/src/androidTest/" in normalized) {
-            return TEST_OCCURRENCE_BACKGROUND
+    internal fun createPopupContent(controller: PopupListController): JComponent {
+        val toolbar = createToolbar(controller)
+        val toolbarHeight = toolbar.preferredSize.height
+        toolbar.maximumSize = Dimension(Int.MAX_VALUE, toolbarHeight)
+        toolbar.minimumSize = Dimension(0, toolbarHeight)
+        toolbar.preferredSize = Dimension(toolbar.preferredSize.width, toolbarHeight)
+
+        return JPanel(BorderLayout()).apply {
+            add(toolbar, BorderLayout.NORTH)
+            add(createContent(controller.list), BorderLayout.CENTER)
         }
-        if (normalized.contains("/test/") || normalized.endsWith("Test.kt") || normalized.endsWith("Tests.kt")) {
-            return TEST_OCCURRENCE_BACKGROUND
-        }
-        return null
     }
+
+    internal fun loadingEntries(): List<PopupEntry> = listOf(
+        PopupEntry.Header(ReduxUsageKind.OTHER, "Loading Redux flow...", expanded = true)
+    )
+
+    internal fun testOccurrenceBackground(filePath: String): Color? =
+        if (isTestPath(filePath)) TEST_OCCURRENCE_BACKGROUND else null
 
     internal fun usagePresentation(
         usage: ReduxUsage,
@@ -175,16 +219,154 @@ object ReduxActionPopup {
 
     internal fun buildEntries(
         usages: List<ReduxUsage>,
-        actionName: String = ""
+        actionName: String = "",
+        filterState: PopupFilterState = PopupFilterState()
     ): List<PopupEntry> {
         val result = mutableListOf<PopupEntry>()
-        val grouped = usages.groupBy { it.kind }
-        listOf(ReduxUsageKind.DISPATCH, ReduxUsageKind.MIDDLEWARE, ReduxUsageKind.REDUCER, ReduxUsageKind.OTHER).forEach { kind ->
+        val filteredUsages = usages.filter { filterState.fileScope.accepts(it.filePath) }
+        val grouped = filteredUsages.groupBy { it.kind }
+
+        orderedUsageKinds().forEach { kind ->
+            if (kind !in filterState.visibleKinds) return@forEach
+
             val group = grouped[kind].orEmpty()
-            result += PopupEntry.Header("${kind.title} (${group.size})")
-            result += group.map { PopupEntry.UsageEntry(it, actionName) }
+            val expanded = kind !in filterState.collapsedKinds
+            result += PopupEntry.Header(kind, "${kind.title} (${group.size})", expanded)
+            if (expanded) {
+                result += group.map { PopupEntry.UsageEntry(it, actionName) }
+            }
         }
+
         return result
+    }
+
+    internal fun toggleSection(
+        filterState: PopupFilterState,
+        kind: ReduxUsageKind
+    ): PopupFilterState {
+        val collapsedKinds = filterState.collapsedKinds.toMutableSet()
+        if (!collapsedKinds.add(kind)) {
+            collapsedKinds.remove(kind)
+        }
+        return filterState.copy(collapsedKinds = collapsedKinds)
+    }
+
+    internal fun shouldCancelForOutsideClick(
+        popupContent: Component,
+        mouseEvent: MouseEvent
+    ): Boolean {
+        val source = mouseEvent.component ?: return false
+        return !SwingUtilities.isDescendingFrom(source, popupContent)
+    }
+
+    private fun createToolbar(controller: PopupListController): JComponent {
+        val panel = JPanel(GridBagLayout()).apply {
+            border = JBUI.Borders.empty(6, 8, 4, 8)
+        }
+
+        val scopeSelector = JComboBox(UsageFileScope.entries.toTypedArray()).apply {
+            selectedItem = controller.filterState.fileScope
+            addActionListener {
+                val scope = selectedItem as? UsageFileScope ?: return@addActionListener
+                controller.updateScope(scope)
+            }
+        }
+        panel.add(scopeSelector, constraints(0, 0.0, GridBagConstraints.WEST))
+
+        orderedUsageKinds().forEachIndexed { index, kind ->
+            val checkbox = JCheckBox(kind.title, kind in controller.filterState.visibleKinds).apply {
+                isOpaque = false
+                border = JBUI.Borders.emptyLeft(8)
+                addActionListener { controller.setKindVisible(kind, isSelected) }
+            }
+            panel.add(checkbox, constraints(index + 1, 0.0, GridBagConstraints.WEST))
+        }
+
+        panel.add(JPanel().apply { isOpaque = false }, constraints(orderedUsageKinds().size + 1, 1.0, GridBagConstraints.WEST))
+        return panel
+    }
+
+    private fun createModel(entries: List<PopupEntry>): DefaultListModel<PopupEntry> =
+        DefaultListModel<PopupEntry>().also { model ->
+            entries.forEach(model::addElement)
+        }
+
+    private fun visibleRowCount(entries: List<PopupEntry>): Int =
+        minOf(entries.size, MAX_VISIBLE_ROWS)
+
+    private fun orderedUsageKinds(): List<ReduxUsageKind> = listOf(
+        ReduxUsageKind.DISPATCH,
+        ReduxUsageKind.MIDDLEWARE,
+        ReduxUsageKind.REDUCER,
+        ReduxUsageKind.OTHER
+    )
+}
+
+internal enum class UsageFileScope(private val label: String) {
+    ALL("All files") {
+        override fun accepts(filePath: String): Boolean = true
+    },
+    PRODUCTION("Production files") {
+        override fun accepts(filePath: String): Boolean = !isTestPath(filePath)
+    },
+    TEST("Test files") {
+        override fun accepts(filePath: String): Boolean = isTestPath(filePath)
+    };
+
+    abstract fun accepts(filePath: String): Boolean
+
+    override fun toString(): String = label
+}
+
+internal data class PopupFilterState(
+    val fileScope: UsageFileScope = UsageFileScope.ALL,
+    val visibleKinds: Set<ReduxUsageKind> = linkedSetOf(
+        ReduxUsageKind.DISPATCH,
+        ReduxUsageKind.MIDDLEWARE,
+        ReduxUsageKind.REDUCER,
+        ReduxUsageKind.OTHER
+    ),
+    val collapsedKinds: Set<ReduxUsageKind> = emptySet()
+)
+
+internal class PopupListController(
+    val list: JBList<PopupEntry>,
+    private var actionName: String = "",
+    private var allUsages: List<ReduxUsage> = emptyList(),
+    internal var filterState: PopupFilterState = PopupFilterState()
+) {
+    fun replaceUsages(usages: List<ReduxUsage>, actionName: String = this.actionName) {
+        this.allUsages = usages
+        this.actionName = actionName
+        refresh()
+    }
+
+    fun updateScope(scope: UsageFileScope) {
+        filterState = filterState.copy(fileScope = scope)
+        refresh()
+    }
+
+    fun setKindVisible(kind: ReduxUsageKind, visible: Boolean) {
+        val visibleKinds = LinkedHashSet(filterState.visibleKinds)
+        if (visible) {
+            visibleKinds.add(kind)
+        } else {
+            visibleKinds.remove(kind)
+        }
+        filterState = filterState.copy(visibleKinds = visibleKinds)
+        refresh()
+    }
+
+    fun toggle(kind: ReduxUsageKind) {
+        filterState = ReduxActionPopup.toggleSection(filterState, kind)
+        refresh()
+    }
+
+    private fun refresh() {
+        ReduxActionPopup.replaceEntries(
+            list,
+            ReduxActionPopup.buildEntries(allUsages, actionName, filterState)
+        )
     }
 }
 
@@ -198,6 +380,9 @@ private fun PopupHandle.debugName(): String = when (this) {
 }
 
 private class JBPopupHandle(private val popup: JBPopup) : PopupHandle {
+    private var loadingRequest: com.intellij.openapi.progress.util.ProgressIndicatorBase? = null
+    private var outsideClickListener: AWTEventListener? = null
+
     override fun cancel() {
         Logger.getInstance(ReduxActionPopup::class.java)
             .info("[redux-nav] popup-cancel handle=${debugName()} visible=${popup.isVisible}")
@@ -205,10 +390,64 @@ private class JBPopupHandle(private val popup: JBPopup) : PopupHandle {
     }
 
     fun debugName(): String = "JBPopupHandle@" + Integer.toHexString(System.identityHashCode(this))
+
+    fun cancelLoading() {
+        loadingRequest?.cancel()
+        loadingRequest = null
+    }
+
+    fun installOutsideClickCancellation() {
+        removeOutsideClickCancellation()
+        val popupContent = popup.content
+        val listener = AWTEventListener { event ->
+            val mouseEvent = event as? MouseEvent ?: return@AWTEventListener
+            if (mouseEvent.id != MouseEvent.MOUSE_PRESSED) return@AWTEventListener
+            if (!popup.isVisible) return@AWTEventListener
+            if (!ReduxActionPopup.shouldCancelForOutsideClick(popupContent, mouseEvent)) return@AWTEventListener
+
+            Logger.getInstance(ReduxActionPopup::class.java).info(
+                "[redux-nav] popup-cancel-outside-click handle=${debugName()} component=${mouseEvent.component?.javaClass?.name} point=${mouseEvent.point}"
+            )
+            popup.cancel()
+        }
+        outsideClickListener = listener
+        Toolkit.getDefaultToolkit().addAWTEventListener(listener, java.awt.AWTEvent.MOUSE_EVENT_MASK)
+    }
+
+    fun removeOutsideClickCancellation() {
+        outsideClickListener?.let { Toolkit.getDefaultToolkit().removeAWTEventListener(it) }
+        outsideClickListener = null
+    }
+
+    fun loadEntries(
+        project: Project,
+        action: ActionInfo,
+        controller: PopupListController,
+        popup: JBPopup
+    ) {
+        val indicator = com.intellij.openapi.progress.util.ProgressIndicatorBase()
+        loadingRequest = indicator
+        ReadAction
+            .nonBlocking<ActionGraph> { ReduxUsageFinder(project).computeGraph(action) }
+            .expireWith(project)
+            .wrapProgress(indicator)
+            .finishOnUiThread(ModalityState.any()) { graph ->
+                if (!popup.isVisible) return@finishOnUiThread
+                controller.replaceUsages(graph.usages, action.displayName)
+                popup.setSize(popup.content.preferredSize)
+                loadingRequest = null
+            }
+            .submit(AppExecutorUtil.getAppExecutorService())
+    }
 }
 
 internal sealed interface PopupEntry {
-    data class Header(val text: String) : PopupEntry
+    data class Header(
+        val kind: ReduxUsageKind,
+        val text: String,
+        val expanded: Boolean
+    ) : PopupEntry
+
     data class UsageEntry(val usage: ReduxUsage, val actionName: String) : PopupEntry
 }
 
@@ -229,15 +468,16 @@ private class EntryRenderer : javax.swing.ListCellRenderer<PopupEntry> {
         hasFocus: Boolean
     ): Component {
         return when (value) {
-            is PopupEntry.Header -> createHeaderRow(list, value.text, selected)
+            is PopupEntry.Header -> createHeaderRow(list, value.text, value.expanded, selected)
             is PopupEntry.UsageEntry -> createUsageRow(list, value, selected)
-            null -> createHeaderRow(list, "", selected)
+            null -> createHeaderRow(list, "", true, selected)
         }
     }
 
     private fun createHeaderRow(
         list: JList<out PopupEntry>,
         text: String,
+        expanded: Boolean,
         selected: Boolean
     ): Component {
         val panel = JPanel(GridBagLayout())
@@ -245,19 +485,13 @@ private class EntryRenderer : javax.swing.ListCellRenderer<PopupEntry> {
         panel.isOpaque = true
         panel.background = if (selected) list.selectionBackground else list.background
 
-        val label = JLabel(text)
+        val label = JLabel("${if (expanded) "\u25be" else "\u25b8"} $text")
         label.font = label.font.deriveFont(label.font.style or java.awt.Font.BOLD)
         label.foreground = if (selected) list.selectionForeground else list.foreground
         label.background = panel.background
         label.isOpaque = false
 
-        val constraints = GridBagConstraints().apply {
-            gridx = 0
-            weightx = 1.0
-            fill = GridBagConstraints.HORIZONTAL
-            anchor = GridBagConstraints.WEST
-        }
-        panel.add(label, constraints)
+        panel.add(label, constraints(0, 1.0, GridBagConstraints.WEST))
         return panel
     }
 
@@ -308,15 +542,15 @@ private class EntryRenderer : javax.swing.ListCellRenderer<PopupEntry> {
         panel.add(codeLabel, constraints(3, 1.0, GridBagConstraints.WEST))
         return panel
     }
-
-    private fun constraints(gridx: Int, weightx: Double, anchor: Int): GridBagConstraints =
-        GridBagConstraints().apply {
-            this.gridx = gridx
-            this.weightx = weightx
-            this.fill = GridBagConstraints.HORIZONTAL
-            this.anchor = anchor
-        }
 }
+
+private fun constraints(gridx: Int, weightx: Double, anchor: Int): GridBagConstraints =
+    GridBagConstraints().apply {
+        this.gridx = gridx
+        this.weightx = weightx
+        this.fill = GridBagConstraints.HORIZONTAL
+        this.anchor = anchor
+    }
 
 private fun escapeHtml(text: String): String =
     buildString(text.length) {
@@ -331,3 +565,13 @@ private fun escapeHtml(text: String): String =
             }
         }
     }
+
+private fun isTestPath(filePath: String): Boolean {
+    val normalized = filePath.replace('\\', '/')
+    if ("/src/test/" in normalized || "/src/androidTest/" in normalized) {
+        return true
+    }
+    return normalized.contains("/test/") ||
+        normalized.endsWith("Test.kt") ||
+        normalized.endsWith("Tests.kt")
+}
