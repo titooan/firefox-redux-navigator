@@ -4,6 +4,7 @@ import com.intellij.codeInsight.codeVision.CodeVisionAnchorKind
 import com.intellij.codeInsight.codeVision.CodeVisionRelativeOrdering
 import com.intellij.codeInsight.hints.codeVision.CodeVisionProviderBase
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.psi.PsiElement
@@ -15,9 +16,12 @@ import org.mozilla.reduxnav.analysis.ReduxActionGraphCache
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.popup.ReduxActionPopup
+import org.mozilla.reduxnav.popup.isTestPath
+import org.mozilla.reduxnav.settings.ReduxNavigatorSettingsService
 import java.awt.event.MouseEvent
 
 class ReduxActionInlayHintsProvider : CodeVisionProviderBase() {
+    private val logger = Logger.getInstance(ReduxActionInlayHintsProvider::class.java)
     private val resolver = ActionSymbolResolver()
 
     override fun acceptsFile(file: PsiFile): Boolean = file.language == KotlinLanguage.INSTANCE
@@ -33,6 +37,10 @@ class ReduxActionInlayHintsProvider : CodeVisionProviderBase() {
 
     override fun getHint(element: PsiElement, file: PsiFile): String? {
         val action = resolveAction(element) ?: return null
+        logger.info(
+            "[redux-nav] lens-get-hint action=${action.displayName} file=${file.virtualFile?.path} " +
+                "project=${element.project.name}"
+        )
         return buildHintText(element.project, action)
     }
 
@@ -51,9 +59,30 @@ class ReduxActionInlayHintsProvider : CodeVisionProviderBase() {
 
     internal fun buildHintText(project: Project, action: ActionInfo): String {
         val graph = project.service<ReduxActionGraphCache>().getGraph(action)
-        val dispatchCount = graph.usages.count { it.kind == ReduxUsageKind.DISPATCH }
-        val middlewareCount = graph.usages.count { it.kind == ReduxUsageKind.MIDDLEWARE }
-        val reducerCount = graph.usages.count { it.kind == ReduxUsageKind.REDUCER }
+        val includeTestFiles = com.intellij.openapi.components.service<ReduxNavigatorSettingsService>().includeTestFilesInLens
+        logger.info(
+            "[redux-nav] lens-build-hint action=${action.displayName} includeTestFiles=$includeTestFiles " +
+                "graphUsages=${graph.usages.size}"
+        )
+
+        return buildHintText(graph.usages, includeTestFiles)
+    }
+
+    internal fun buildHintText(usages: List<org.mozilla.reduxnav.model.ReduxUsage>, includeTestFiles: Boolean): String {
+        val filteredUsages = if (includeTestFiles) {
+            usages
+        } else {
+            usages.filterNot { isTestPath(it.filePath) }
+        }
+
+        logger.info(
+            "[redux-nav] lens-build-hint-filtered includeTestFiles=$includeTestFiles " +
+                "before=${usages.size} after=${filteredUsages.size}"
+        )
+
+        val dispatchCount = filteredUsages.count { it.kind == ReduxUsageKind.DISPATCH }
+        val middlewareCount = filteredUsages.count { it.kind == ReduxUsageKind.MIDDLEWARE }
+        val reducerCount = filteredUsages.count { it.kind == ReduxUsageKind.REDUCER }
 
         val parts = buildList {
             if (dispatchCount > 0) add(formatCount(dispatchCount, "dispatch"))

@@ -44,6 +44,14 @@ This project uses the IntelliJ Platform Gradle Plugin 2.x. JetBrains documents 2
 ./gradlew buildPlugin
 ```
 
+For a faster edit/build loop while the sandbox IDE stays open:
+
+```bash
+./scripts/watch-plugin.sh
+```
+
+This keeps `buildPlugin` running in continuous mode, so saved code changes rebuild automatically.
+
 The built plugin zip will be under:
 
 ```text
@@ -59,6 +67,16 @@ build/distributions/
 5. Restart Android Studio.
 6. Open a Firefox Android checkout.
 7. Look for the purple Redux icon next to Kotlin action references.
+
+## Faster sandbox loop
+
+If you are already running `./gradlew runIde`, you usually do not need to kill it for ordinary code changes.
+
+- Keep the sandbox IDE open.
+- Run `./scripts/watch-plugin.sh` in another terminal.
+- Save your Kotlin or Java changes.
+- For pure code changes, the rebuilt classes are picked up without restarting the sandbox in many cases.
+- For `plugin.xml`, new extensions, or startup wiring changes, restart the sandbox IDE.
 
 ## Important limitations
 

@@ -12,6 +12,11 @@
             language="kotlin"
             implementationClass="org.mozilla.reduxnav.gutter.ReduxActionLineMarkerProvider"/>
         <codeInsight.daemonBoundCodeVisionProvider implementation="org.mozilla.reduxnav.inlay.ReduxActionInlayHintsProvider"/>
+        <config.codeVisionGroupSettingProvider implementation="org.mozilla.reduxnav.inlay.ReduxActionCodeVisionGroupSettingProvider"/>
+        <applicationConfigurable
+            instance="org.mozilla.reduxnav.settings.ReduxNavigatorSettingsConfigurable"
+            id="org.mozilla.reduxnav.settings.ReduxNavigatorSettings"
+            displayName="Redux Navigator"/>
         <postStartupActivity implementation="org.mozilla.reduxnav.startup.ReduxNavigatorSandboxStartupActivity"/>
     </extensions>
 

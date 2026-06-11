@@ -39,3 +39,8 @@ intellijPlatform {
         }
     }
 }
+
+tasks.named("buildSearchableOptions").configure {
+    // This task launches a full IDE instance, which conflicts with an already running Studio.
+    enabled = false
+}

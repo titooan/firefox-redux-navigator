@@ -566,7 +566,7 @@ private fun escapeHtml(text: String): String =
         }
     }
 
-private fun isTestPath(filePath: String): Boolean {
+internal fun isTestPath(filePath: String): Boolean {
     val normalized = filePath.replace('\\', '/')
     if ("/src/test/" in normalized || "/src/androidTest/" in normalized) {
         return true

@@ -15,6 +15,12 @@ The fastest way to test this plugin is to run a separate sandbox IDE instance an
 4. Rebuild or let Gradle refresh the changed classes.
 5. Use the sandbox IDE to click through the plugin behavior.
 
+If you want the rebuild step to happen automatically, run this in a separate terminal:
+
+```bash
+./scripts/watch-plugin.sh
+```
+
 ## What Usually Reloads Well
 
 - Kotlin and Java implementation changes
@@ -26,6 +32,12 @@ The fastest way to test this plugin is to run a separate sandbox IDE instance an
 - `plugin.xml` changes
 - New extension registrations
 - Resource or wiring changes that affect plugin startup
+
+## Notes On Reloading
+
+- `buildPlugin --continuous` is the quickest way to keep the sandbox fed with fresh plugin output.
+- For code-only changes, that is often enough.
+- For extension registration changes, restart the sandbox IDE after rebuilding.
 
 ## Notes
 

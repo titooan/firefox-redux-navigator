@@ -5,6 +5,11 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.mozilla.reduxnav.analysis.ActionSymbolResolver
 import org.mozilla.reduxnav.analysis.ReduxActionGraphCache
+import org.mozilla.reduxnav.model.ReduxUsage
+import org.mozilla.reduxnav.model.ReduxUsageKind
+import org.mozilla.reduxnav.model.toSmartPointer
+import org.mozilla.reduxnav.settings.ReduxNavigatorSettingsService
+import com.intellij.openapi.components.service
 
 class ReduxActionInlayHintsProviderTest : BasePlatformTestCase() {
     fun testResolveDeclarationFindsTopLevelActionDeclarationsByNameLeaf() {
@@ -131,6 +136,36 @@ class ReduxActionInlayHintsProviderTest : BasePlatformTestCase() {
         )
     }
 
+    fun testInlayHintCanExcludeTestFilesFromCounts() {
+        myFixture.configureByText(
+            "Actions.kt",
+            """
+            interface Action
+
+            data object RefreshAction : Action
+            """.trimIndent()
+        )
+        val provider = ReduxActionInlayHintsProvider()
+        val settings = com.intellij.openapi.components.service<ReduxNavigatorSettingsService>()
+
+        settings.setIncludeTestFilesInLens(false)
+        try {
+            assertEquals(
+                "Redux: 1 dispatch | 1 reducer",
+                provider.buildHintText(
+                    listOf(
+                        usage(ReduxUsageKind.DISPATCH, "/Users/titouan/project/app/src/main/java/Foo.kt"),
+                        usage(ReduxUsageKind.MIDDLEWARE, "/Users/titouan/project/app/src/test/java/FooTest.kt"),
+                        usage(ReduxUsageKind.REDUCER, "/Users/titouan/project/app/src/main/java/Bar.kt")
+                    ),
+                    includeTestFiles = settings.includeTestFilesInLens
+                )
+            )
+        } finally {
+            settings.setIncludeTestFilesInLens(true)
+        }
+    }
+
     fun testInlayProviderRejectsNonActionDeclarations() {
         myFixture.configureByText(
             "Actions.kt",
@@ -184,4 +219,14 @@ class ReduxActionInlayHintsProviderTest : BasePlatformTestCase() {
 
         assertNotSame(second, third)
     }
+
+    private fun usage(kind: ReduxUsageKind, filePath: String): ReduxUsage =
+        ReduxUsage(
+            kind = kind,
+            displayText = "RefreshAction",
+            fileName = filePath.substringAfterLast('/'),
+            filePath = filePath,
+            line = 1,
+            element = myFixture.file.toSmartPointer()
+        )
 }
