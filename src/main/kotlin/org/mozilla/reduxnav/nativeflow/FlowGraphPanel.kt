@@ -9,11 +9,14 @@ import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
 import java.awt.geom.Path2D
+import java.awt.geom.PathIterator
 import java.awt.geom.RoundRectangle2D
 import javax.swing.JComponent
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 class FlowGraphPanel(
@@ -108,17 +111,14 @@ class FlowGraphPanel(
     private fun drawEdge(g: Graphics2D, edge: RenderedEdge) {
         if (edge.points.size < 2) return
 
-        g.color = arrowColor()
+        g.color = edgeColor(edge)
         g.stroke = BasicStroke(
             JBUI.scale(1.5f),
             BasicStroke.CAP_ROUND,
             BasicStroke.JOIN_ROUND
         )
 
-        val path = Path2D.Double().apply {
-            moveTo(edge.points.first().x, edge.points.first().y)
-            edge.points.drop(1).forEach { point -> lineTo(point.x, point.y) }
-        }
+        val path = createRoundedPath(edge.points)
         g.draw(path)
         drawArrowHead(g, edge.points[edge.points.lastIndex - 1], edge.points.last())
     }
@@ -158,11 +158,95 @@ class FlowGraphPanel(
         }
     }
 
-    private fun arrowColor(): Color = JBColor.border()
+    private fun edgeColor(edge: RenderedEdge): Color {
+        val graph = renderedGraph ?: return JBColor.border()
+        return FlowEdgePalette.colorFor(edge, graph.nodes.associateBy { it.id })
+    }
+
+    internal fun edgeColorsForTest(): List<Color> {
+        val graph = renderedGraph ?: return emptyList()
+        val nodesById = graph.nodes.associateBy { it.id }
+        return graph.edges.map { FlowEdgePalette.colorFor(it, nodesById) }
+    }
+
+    private fun createRoundedPath(points: List<Point2D>): Path2D.Double =
+        Path2D.Double().apply {
+            if (points.isEmpty()) return@apply
+
+            moveTo(points.first().x, points.first().y)
+            if (points.size == 1) return@apply
+            if (points.size == 2) {
+                lineTo(points.last().x, points.last().y)
+                return@apply
+            }
+
+            for (index in 1 until points.lastIndex) {
+                val previous = points[index - 1]
+                val current = points[index]
+                val next = points[index + 1]
+                val radius = min(
+                    CORNER_RADIUS,
+                    min(distance(previous, current), distance(current, next)) / 2.0
+                )
+
+                if (radius <= 0.0 || isCollinear(previous, current, next)) {
+                    lineTo(current.x, current.y)
+                    continue
+                }
+
+                val entry = trimToward(current, previous, radius)
+                val exit = trimToward(current, next, radius)
+                lineTo(entry.x, entry.y)
+                quadTo(current.x, current.y, exit.x, exit.y)
+            }
+
+            val last = points.last()
+            lineTo(last.x, last.y)
+        }
+
+    private fun trimToward(from: Point2D, toward: Point2D, distance: Double): Point2D {
+        val dx = toward.x - from.x
+        val dy = toward.y - from.y
+        val length = hypot(dx, dy)
+        if (length == 0.0) return from
+        val scale = distance / length
+        return Point2D(
+            x = from.x + (dx * scale),
+            y = from.y + (dy * scale)
+        )
+    }
+
+    private fun distance(from: Point2D, to: Point2D): Double = hypot(to.x - from.x, to.y - from.y)
+
+    private fun isCollinear(previous: Point2D, current: Point2D, next: Point2D): Boolean {
+        val crossProduct = ((current.x - previous.x) * (next.y - current.y)) - ((current.y - previous.y) * (next.x - current.x))
+        return kotlin.math.abs(crossProduct) < 0.001
+    }
 
     companion object {
         private const val MIN_SCALE = 0.35
         private const val MAX_SCALE = 3.0
         private const val ZOOM_STEP = 1.1
+        private const val CORNER_RADIUS = 18.0
+
+        internal fun segmentTypesForRoundedPathTest(points: List<Point2D>): List<String> {
+            val path = FlowGraphPanel().createRoundedPath(points)
+            val iterator = path.getPathIterator(null)
+            val coords = DoubleArray(6)
+            val segments = mutableListOf<String>()
+            while (!iterator.isDone) {
+                val segmentName = when (iterator.currentSegment(coords)) {
+                    PathIterator.SEG_MOVETO -> "MOVE_TO"
+                    PathIterator.SEG_LINETO -> "LINE_TO"
+                    PathIterator.SEG_QUADTO -> "QUAD_TO"
+                    PathIterator.SEG_CUBICTO -> "CUBIC_TO"
+                    PathIterator.SEG_CLOSE -> "CLOSE"
+                    else -> "UNKNOWN"
+                }
+                segments += segmentName
+                iterator.next()
+            }
+            return segments
+        }
     }
 }
