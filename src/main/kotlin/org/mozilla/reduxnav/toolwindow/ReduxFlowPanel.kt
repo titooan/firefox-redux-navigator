@@ -22,7 +22,7 @@ import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
-import org.mozilla.reduxnav.render.MermaidPreviewPanel
+import org.mozilla.reduxnav.nativeflow.NativeFlowPreviewPanel
 import java.awt.BorderLayout
 import java.awt.datatransfer.StringSelection
 import javax.swing.Box
@@ -38,7 +38,7 @@ class ReduxFlowPanel(
     private val mermaidRenderer = MermaidFlowRenderer(
         style = if (StartupUiUtil.isUnderDarcula) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
     )
-    private val mermaidPreviewPanel = MermaidPreviewPanel(project)
+    private val mermaidPreviewPanel = NativeFlowPreviewPanel()
     private val headerTitle = JBLabel("Redux Flow").apply {
         font = JBFont.h3().asBold()
     }
@@ -175,7 +175,6 @@ class ReduxFlowPanel(
     internal fun selectedTabTitle(): String = tabs.getTitleAt(tabs.selectedIndex)
 
     override fun dispose() {
-        mermaidPreviewPanel.dispose()
     }
 
     private fun summaryLabel(graph: ActionGraph): JComponent {

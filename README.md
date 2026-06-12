@@ -16,7 +16,7 @@ First iteration of an Android Studio / IntelliJ plugin to navigate Firefox Andro
 - Double-click a usage in the popup to navigate to it.
 - Opens a `Redux Flow` tool window from the editor context menu or popup to inspect dispatches, middlewares, and reducers in one vertical view.
 - Generates Mermaid flowchart source from the cached Redux action graph, with copy-to-clipboard support in the tool window.
-- Renders Mermaid diagrams inside the tool window when JCEF is available, with Mermaid Source as a fallback-friendly companion view.
+- Parses and renders a small Mermaid `flowchart LR` subset locally inside the tool window, without JCEF, Node, Chromium, or network access.
 
 ## Redux Flow tool window
 
@@ -38,7 +38,7 @@ The `Flow` tab contains:
 
 Each row is clickable and navigates to the source location.
 
-The `Diagram` tab renders the Mermaid flowchart visually when the IDE runtime supports JCEF. If JCEF is unavailable, the plugin shows a fallback message and the `Mermaid Source` tab remains available.
+The `Diagram` tab renders the generated Mermaid subset locally using a native Swing renderer backed by ELK layout. The `Mermaid Source` tab remains available for inspection and copy/export workflows.
 
 The toolbar includes:
 
@@ -105,14 +105,18 @@ action --> middleware_0
 middleware_0 --> reducer_0
 ```
 
-## Phase 5: Rendered Mermaid Preview
+## Native Diagram Renderer
 
-- Mermaid JavaScript is bundled locally at `src/main/resources/mermaid/mermaid.min.js`.
-- The bundled Mermaid version is `11.15.0`, sourced from the npm `mermaid` package and loaded offline.
-- The `Diagram` tab uses `JBCefBrowser` when `JBCefApp.isSupported()` is true.
-- If JCEF is unavailable, the plugin does not crash and shows a fallback message directing you to `Mermaid Source`.
-- `Copy Mermaid` always copies the exact Mermaid source used for both the source tab and rendered preview.
-- Android Studio needs a JetBrains Runtime build with JCEF support for the `Diagram` tab to render.
+- The plugin keeps Mermaid text as its diagram input contract, but only supports a deliberately small local subset.
+- Supported syntax:
+  - `flowchart LR`
+  - blank lines
+  - comments beginning with `%%`
+  - rectangular nodes like `node_id["Label"]`
+  - directed edges like `from --> to`
+  - the plugin's own optional `classDef testNode ...` and `class some_id testNode;` lines used to highlight test nodes
+- Unsupported Mermaid syntax is rejected with a readable line-numbered error in the `Diagram` tab.
+- `Copy Mermaid` still copies the exact Mermaid source shown in the `Mermaid Source` tab.
 
 ## Current heuristics
 
@@ -190,7 +194,7 @@ Known limitations:
 - Dispatch wrapper functions are not modeled yet.
 - State-centric visualization is not implemented yet.
 - Mermaid export is not implemented yet.
-- Mermaid rendering depends on JCEF support in the running IDE.
+- The native diagram renderer intentionally does not support full Mermaid syntax.
 
 ## Suggested next iterations
 
