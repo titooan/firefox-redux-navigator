@@ -21,4 +21,14 @@ class NativeFlowPreviewPanelTest {
             panel.legendLabelsForTest()
         )
     }
+
+    @Test
+    fun previewToolbarButtonsDoNotKeepFocusPainting() {
+        val panel = NativeFlowPreviewPanel()
+
+        assertEquals(
+            listOf(true to true, true to true, true to true, true to true),
+            panel.toolbarButtonFocusStatesForTest()
+        )
+    }
 }

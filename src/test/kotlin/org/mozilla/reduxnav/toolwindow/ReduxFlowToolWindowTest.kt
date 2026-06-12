@@ -155,6 +155,15 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         assertTrue(panel.stackedControlsPreferredHeightForTest(140) > 40)
     }
 
+    fun testHeaderButtonsKeepDefaultFocusPaintingBehavior() {
+        val panel = ReduxFlowPanel(project) {}
+
+        assertEquals(
+            listOf(true to true, true to true, true to true, true to true),
+            panel.controlButtonFocusStatesForTest()
+        )
+    }
+
     private fun actionInfo(name: String): ActionInfo {
         myFixture.configureByText(
             "$name.kt",

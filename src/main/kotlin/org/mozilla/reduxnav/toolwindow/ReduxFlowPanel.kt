@@ -25,6 +25,7 @@ import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.nativeflow.NativeFlowPreviewPanel
 import org.mozilla.reduxnav.popup.isTestPath
+import org.mozilla.reduxnav.ui.withTransientFocusRing
 import java.awt.BorderLayout
 import java.awt.Container
 import java.awt.Dimension
@@ -191,12 +192,12 @@ class ReduxFlowPanel(
             add(
                 JButton("Refresh").apply {
                     addActionListener { onRefresh() }
-                }
+                }.withTransientFocusRing()
             )
             add(
                 JButton("Copy Mermaid").apply {
                     addActionListener { copyMermaid() }
-                }
+                }.withTransientFocusRing()
             )
         }
 
@@ -256,6 +257,9 @@ class ReduxFlowPanel(
     internal fun includesTestsForTest(): Boolean = includeTestsModel.isSelected
 
     internal fun headerUsesCompactLayout(): Boolean = secondaryHeaderRow.isVisible
+
+    internal fun controlButtonFocusStatesForTest(): List<Pair<Boolean, Boolean>> =
+        controlsButtons().map { it.isFocusable to it.isFocusPainted }
 
     internal fun stackedControlsPreferredHeightForTest(width: Int): Int {
         stackedControls.setSize(width, Int.MAX_VALUE)

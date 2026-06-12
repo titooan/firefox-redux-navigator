@@ -4,6 +4,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
+import org.mozilla.reduxnav.ui.withTransientFocusRing
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.event.InputEvent
@@ -103,18 +104,19 @@ class NativeFlowPreviewPanel(
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             border = JBUI.Borders.empty(8)
             isOpaque = false
-            add(JButton("-").apply { addActionListener { graphPanel.zoomOut() } })
+            add(createToolbarButton("-") { graphPanel.zoomOut() })
             add(Box.createHorizontalStrut(6))
-            add(JButton("+").apply { addActionListener { graphPanel.zoomIn() } })
+            add(createToolbarButton("+") { graphPanel.zoomIn() })
             add(Box.createHorizontalStrut(6))
-            add(JButton("Reset").apply { addActionListener { graphPanel.resetZoom() } })
+            add(createToolbarButton("Reset") { graphPanel.resetZoom() })
             add(Box.createHorizontalStrut(6))
-            add(
-                JButton("Fit").apply {
-                    addActionListener { graphPanel.fitTo(scrollPane.viewport.extentSize) }
-                }
-            )
+            add(createToolbarButton("Fit") { graphPanel.fitTo(scrollPane.viewport.extentSize) })
         }
+
+    private fun createToolbarButton(text: String, onClick: () -> Unit): JButton =
+        JButton(text).apply {
+            addActionListener { onClick() }
+        }.withTransientFocusRing()
 
     private fun createLegend(): JComponent =
         JPanel().apply {
@@ -161,4 +163,9 @@ class NativeFlowPreviewPanel(
 
     internal fun legendLabelsForTest(): List<String> =
         FlowNodePalette.legendEntries().map { it.label }
+
+    internal fun toolbarButtonFocusStatesForTest(): List<Pair<Boolean, Boolean>> =
+        createToolbar().components
+            .filterIsInstance<JButton>()
+            .map { it.isFocusable to it.isFocusPainted }
 }
