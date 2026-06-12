@@ -110,10 +110,49 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         assertTrue(panel.mermaidText().contains("action --> reducer_0"))
     }
 
+    fun testShowGraphCanExcludeTestsFromMermaidAndFlowSummary() {
+        val panel = ReduxFlowPanel(project) {}
+        val graph = ActionGraph(
+            actionInfo("AddTabAction"),
+            listOf(
+                usage("Dispatch.kt", "/work/src/main/kotlin/Dispatch.kt", 4, ReduxUsageKind.DISPATCH),
+                usage("DispatchTest.kt", "/work/src/test/kotlin/DispatchTest.kt", 5, ReduxUsageKind.DISPATCH),
+                usage("Reducer.kt", "/work/src/main/kotlin/Reducer.kt", 20, ReduxUsageKind.REDUCER)
+            )
+        )
+
+        panel.showGraph(graph)
+        panel.setIncludeTestsForTest(false)
+
+        assertFalse(panel.includesTestsForTest())
+        assertTrue(panel.mermaidText().contains("""dispatch_0["Dispatch.kt:4"]"""))
+        assertFalse(panel.mermaidText().contains("DispatchTest.kt:5"))
+        assertFalse(panel.mermaidText().contains("classDef testNode"))
+    }
+
     fun testPanelStartsOnFlowTab() {
         val panel = ReduxFlowPanel(project) {}
 
         assertEquals("Flow", panel.selectedTabTitle())
+    }
+
+    fun testHeaderUsesCompactLayoutWhenPanelIsNarrow() {
+        val panel = ReduxFlowPanel(project) {}
+
+        panel.setSize(280, 400)
+        panel.doLayout()
+
+        assertTrue(panel.headerUsesCompactLayout())
+    }
+
+    fun testCompactControlsWrapToMultipleLinesWhenVeryNarrow() {
+        val panel = ReduxFlowPanel(project) {}
+
+        panel.setSize(220, 400)
+        panel.doLayout()
+
+        assertTrue(panel.headerUsesCompactLayout())
+        assertTrue(panel.stackedControlsPreferredHeightForTest(140) > 40)
     }
 
     private fun actionInfo(name: String): ActionInfo {
