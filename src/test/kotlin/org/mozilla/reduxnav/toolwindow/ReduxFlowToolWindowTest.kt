@@ -11,6 +11,9 @@ import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.model.toSmartPointer
 import org.mozilla.reduxnav.nativeflow.DiagramNodeTarget
+import org.mozilla.reduxnav.state.StateFieldGraph
+import org.mozilla.reduxnav.state.StateFieldInfo
+import org.mozilla.reduxnav.state.StateModification
 import java.io.File
 
 class ReduxFlowToolWindowTest : BasePlatformTestCase() {
@@ -277,9 +280,44 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         val panel = ReduxFlowPanel(project) {}
 
         assertEquals(
-            listOf("Graph", "Mermaid Source", "Flow"),
+            listOf("Graph", "Mermaid Source", "Flow", "State"),
             panel.tabTitlesForTest()
         )
+    }
+
+    fun testShowStateGraphSelectsStateTabAndRendersRows() {
+        val panel = ReduxFlowPanel(project) {}
+        try {
+            val action = actionInfo("SelectTabAction")
+            val modification = StateModification(
+                stateField = stateFieldInfo(),
+                action = action,
+                reducerUsage = null,
+                modificationPointer = usage("Reducer.kt", "/work/Reducer.kt", 20, ReduxUsageKind.REDUCER).element,
+                fileName = "Reducer.kt",
+                filePath = "/work/Reducer.kt",
+                lineNumber = 20,
+                snippet = "selectedTabId = action.tabId"
+            )
+
+            panel.showStateGraph(
+                StateFieldGraph(
+                    stateField = stateFieldInfo(),
+                    modifications = listOf(modification)
+                )
+            )
+
+            assertEquals("State", panel.selectedTabTitle())
+            assertEquals("State Explorer: BrowserState.selectedTabId", panel.stateHeaderTextForTest())
+            assertEquals(listOf("SelectTabAction"), panel.stateActionLabelsForTest())
+            assertEquals(listOf("SelectTabAction: selectedTabId = action.tabId"), panel.stateModificationLabelsForTest())
+            assertTrue(panel.mermaidText().contains("flowchart LR"))
+            assertTrue(panel.mermaidText().contains("action_0 --> reducer_0"))
+            assertTrue(panel.mermaidText().contains("reducer_0 --> state"))
+            assertEquals(setOf("action_0", "reducer_0", "state"), panel.diagramNodeTargetsForTest().keys)
+        } finally {
+            panel.dispose()
+        }
     }
 
     fun testHeaderUsesCompactLayoutWhenPanelIsNarrow() {
@@ -349,4 +387,14 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
             element = element.toSmartPointer()
         )
     }
+
+    private fun stateFieldInfo(): StateFieldInfo =
+        StateFieldInfo(
+            id = "BrowserState.selectedTabId",
+            fieldName = "selectedTabId",
+            fieldPath = "selectedTabId",
+            stateClassName = "BrowserState",
+            qualifiedPath = "BrowserState.selectedTabId",
+            declarationPointer = null
+        )
 }

@@ -5,8 +5,8 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
-import org.mozilla.reduxnav.graph.ReduxGraph
 import org.mozilla.reduxnav.graph.ReduxGraphAdapter
+import org.mozilla.reduxnav.graph.ReduxGraph
 import org.mozilla.reduxnav.ui.withTransientFocusRing
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -42,14 +42,22 @@ class NativeFlowPreviewPanel(
         graph: ReduxGraph?,
         nodeTargets: Map<String, DiagramNodeTarget> = emptyMap()
     ) {
+        setFlowGraph(graph?.let(adapter::adapt), nodeTargets, emptyMessage = "Select a Redux Action and choose \"Show Redux Flow\".")
+    }
+
+    fun setFlowGraph(
+        graph: FlowGraph?,
+        nodeTargets: Map<String, DiagramNodeTarget> = emptyMap(),
+        emptyMessage: String = "Select a Redux Action and choose \"Show Redux Flow\"."
+    ) {
         this.nodeTargets = nodeTargets
         if (graph == null) {
-            showMessage("Select a Redux Action and choose \"Show Redux Flow\".")
+            showMessage(emptyMessage)
             return
         }
 
         try {
-            val renderedGraph = layouter.layout(adapter.adapt(graph))
+            val renderedGraph = layouter.layout(graph)
             showGraph(renderedGraph)
         } catch (error: Exception) {
             LOG.warn("Could not build Redux graph.", error)

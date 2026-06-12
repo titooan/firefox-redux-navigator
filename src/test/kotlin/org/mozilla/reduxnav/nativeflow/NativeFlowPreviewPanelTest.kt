@@ -21,7 +21,7 @@ class NativeFlowPreviewPanelTest {
         val panel = NativeFlowPreviewPanel()
 
         assertEquals(
-            listOf("Dispatch", "Dispatch (Test)", "Action", "Middleware", "Reducer"),
+            listOf("Dispatch", "Dispatch (Test)", "Action", "Middleware", "Reducer", "State"),
             panel.legendLabelsForTest()
         )
     }

@@ -12,6 +12,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
+import org.mozilla.reduxnav.model.ActionInfo
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
@@ -71,8 +72,27 @@ class ReduxCodePreviewPanel(
         val preview = ReadAction.compute<PreviewData?, RuntimeException> {
             when (target) {
                 is DiagramNodeTarget.ActionTarget -> previewDataFor(target.action.declaration?.element)
+                is DiagramNodeTarget.ModificationTarget -> previewDataFor(target.modification.modificationPointer.element)
+                is DiagramNodeTarget.StateFieldTarget -> previewDataFor(target.field.declarationPointer?.element)
                 is DiagramNodeTarget.UsageTarget -> previewDataFor(target.usage.element.element)
             }
+        }
+
+        if (preview == null) {
+            showMessage("Preview is unavailable for the selected node.")
+            return
+        }
+
+        showPreview(preview)
+    }
+
+    fun showAction(action: ActionInfo?) {
+        showElement(action?.declaration?.element)
+    }
+
+    fun showElement(element: PsiElement?) {
+        val preview = ReadAction.compute<PreviewData?, RuntimeException> {
+            previewDataFor(element)
         }
 
         if (preview == null) {

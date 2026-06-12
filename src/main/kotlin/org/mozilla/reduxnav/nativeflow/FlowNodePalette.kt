@@ -14,6 +14,7 @@ object FlowNodePalette {
                 FlowNodeKind.ACTION -> actionColors()
                 FlowNodeKind.MIDDLEWARE -> middlewareColors()
                 FlowNodeKind.REDUCER -> reducerColors()
+                FlowNodeKind.STATE -> stateColors()
                 FlowNodeKind.UNKNOWN -> defaultColors()
             }
         }
@@ -23,7 +24,8 @@ object FlowNodePalette {
         LegendEntry("Dispatch (Test)", colorsFor(FlowNodeKind.DISPATCH, isTestNode = true)),
         LegendEntry("Action", colorsFor(FlowNodeKind.ACTION, isTestNode = false)),
         LegendEntry("Middleware", colorsFor(FlowNodeKind.MIDDLEWARE, isTestNode = false)),
-        LegendEntry("Reducer", colorsFor(FlowNodeKind.REDUCER, isTestNode = false))
+        LegendEntry("Reducer", colorsFor(FlowNodeKind.REDUCER, isTestNode = false)),
+        LegendEntry("State", colorsFor(FlowNodeKind.STATE, isTestNode = false))
     )
 
     private fun defaultColors(): NodeColors = NodeColors(
@@ -60,6 +62,12 @@ object FlowNodePalette {
         fill = JBColor(Color(0xF7, 0xD9, 0xD6), Color(0x5A, 0x2F, 0x2A)),
         border = JBColor(Color(0xC5, 0x6A, 0x5D), Color(0xE0, 0x8A, 0x7E)),
         text = JBColor(Color(0x4E, 0x21, 0x1C), Color(0xFF, 0xF5, 0xF4))
+    )
+
+    private fun stateColors(): NodeColors = NodeColors(
+        fill = JBColor(Color(0xD8, 0xF1, 0xE4), Color(0x1E, 0x53, 0x45)),
+        border = JBColor(Color(0x4A, 0xA6, 0x82), Color(0x6F, 0xCF, 0xAA)),
+        text = JBColor(Color(0x14, 0x3A, 0x30), Color(0xEE, 0xFF, 0xF8))
     )
 }
 

@@ -10,6 +10,7 @@ enum class FlowNodeKind(val displayName: String) {
     ACTION("Action"),
     MIDDLEWARE("Middleware"),
     REDUCER("Reducer"),
+    STATE("State"),
     UNKNOWN("Node");
 
     companion object {
@@ -17,6 +18,7 @@ enum class FlowNodeKind(val displayName: String) {
             when {
                 nodeId == "action" -> ACTION
                 nodeId.startsWith("dispatch_") -> DISPATCH
+                nodeId == "state" || nodeId.startsWith("state_") -> STATE
                 nodeId.startsWith("middleware_") -> MIDDLEWARE
                 nodeId.startsWith("reducer_") -> REDUCER
                 else -> UNKNOWN

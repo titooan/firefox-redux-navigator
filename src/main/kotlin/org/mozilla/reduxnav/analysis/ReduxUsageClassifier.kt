@@ -51,6 +51,13 @@ class ReduxUsageClassifier(
         val inWhenBranch = element.ancestors().any { it is KtWhenEntry }
         if (!inWhenBranch) return false
 
+        if (isReducerContainer(element)) {
+            return true
+        }
+        return false
+    }
+
+    internal fun isReducerContainer(element: PsiElement): Boolean {
         val function = element.ancestors().filterIsInstance<KtFunction>().firstOrNull()
         if (function != null && conventions.reducerNameHints.any { function.name?.contains(it, ignoreCase = true) == true }) {
             return true

@@ -30,6 +30,14 @@ import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.nativeflow.DiagramNodeTarget
 import org.mozilla.reduxnav.nativeflow.NativeFlowPreviewPanel
 import org.mozilla.reduxnav.popup.isTestPath
+import org.mozilla.reduxnav.state.StateGraph
+import org.mozilla.reduxnav.state.StateGraphAdapter
+import org.mozilla.reduxnav.state.StateGraphBuilder
+import org.mozilla.reduxnav.state.StateExplorerPanel
+import org.mozilla.reduxnav.state.StateFieldGraph
+import org.mozilla.reduxnav.state.StateFieldInfo
+import org.mozilla.reduxnav.state.StateMermaidRenderer
+import org.mozilla.reduxnav.state.StateModification
 import org.mozilla.reduxnav.ui.withTransientFocusRing
 import java.awt.BorderLayout
 import java.awt.Container
@@ -50,7 +58,12 @@ class ReduxFlowPanel(
     private val onRefresh: () -> Unit
 ) : JPanel(BorderLayout()), Disposable {
     private val reduxGraphBuilder = ReduxGraphBuilder()
+    private val stateGraphBuilder = StateGraphBuilder()
+    private val stateGraphAdapter = StateGraphAdapter()
     private val mermaidRenderer = MermaidFlowRenderer(
+        style = if (StartupUiUtil.isUnderDarcula) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
+    )
+    private val stateMermaidRenderer = StateMermaidRenderer(
         style = if (StartupUiUtil.isUnderDarcula) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
     )
     private val graphPreviewPanel = NativeFlowPreviewPanel(
@@ -75,6 +88,13 @@ class ReduxFlowPanel(
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
         border = JBUI.Borders.empty(12)
     }
+    private val stateExplorerPanel = StateExplorerPanel(
+        project = project,
+        onActionSelected = { showCodePreviewForAction(it) },
+        onActionNavigate = { navigateToAction(project, it) },
+        onModificationSelected = { showCodePreviewForModification(it) },
+        onModificationNavigate = { navigateToModification(project, it) }
+    )
     private val mermaidTextArea = JBTextArea().apply {
         isEditable = false
         lineWrap = false
@@ -86,6 +106,7 @@ class ReduxFlowPanel(
         addTab("Graph", graphPreviewPanel)
         addTab("Mermaid Source", JBScrollPane(mermaidTextArea))
         addTab("Flow", JBScrollPane(contentPanel))
+        addTab("State", JBScrollPane(stateExplorerPanel))
         selectedIndex = GRAPH_TAB_INDEX
     }
     private val mainSplitter = OnePixelSplitter(true, 0.68f).apply {
@@ -98,6 +119,7 @@ class ReduxFlowPanel(
     private var currentMermaid: String = ""
     private var currentDiagramTargets: Map<String, DiagramNodeTarget> = emptyMap()
     private var currentPreviewTarget: DiagramNodeTarget? = null
+    private var currentStateGraph: StateFieldGraph? = null
 
     init {
         border = JBUI.Borders.empty()
@@ -110,12 +132,14 @@ class ReduxFlowPanel(
     fun showEmptyState() {
         currentAction = null
         currentGraph = null
+        currentStateGraph = null
         currentMermaid = ""
         currentDiagramTargets = emptyMap()
         currentPreviewTarget = null
         headerTitle.text = "Redux Flow"
         renderMessage("Select a Redux Action and choose \"Show Redux Flow\".")
-        renderGraph(null)
+        stateExplorerPanel.showEmptyState()
+        renderActionGraph(null)
         resetCodePreview()
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
@@ -125,12 +149,13 @@ class ReduxFlowPanel(
     fun showInvalidAction(action: ActionInfo) {
         currentAction = action
         currentGraph = null
+        currentStateGraph = null
         currentMermaid = ""
         currentDiagramTargets = emptyMap()
         currentPreviewTarget = null
         headerTitle.text = "Redux Flow: ${action.displayName}"
         renderMessage("The selected Redux Action is no longer valid. Re-run Show Redux Flow.")
-        renderGraph(null)
+        renderActionGraph(null)
         resetCodePreview()
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
@@ -140,6 +165,7 @@ class ReduxFlowPanel(
     fun showAnalysisError(action: ActionInfo) {
         currentAction = action
         currentGraph = null
+        currentStateGraph = null
         currentMermaid = ""
         currentDiagramTargets = emptyMap()
         currentPreviewTarget = null
@@ -154,10 +180,73 @@ class ReduxFlowPanel(
 
     fun showGraph(graph: ActionGraph) {
         currentGraph = graph
+        currentStateGraph = null
         currentAction = graph.action
         currentPreviewTarget = null
         renderCurrentGraph(graph)
         tabs.selectedIndex = GRAPH_TAB_INDEX
+        updateHeaderLayout()
+    }
+
+    fun showInvalidState(field: StateFieldInfo) {
+        currentStateGraph = null
+        currentAction = null
+        currentGraph = null
+        currentPreviewTarget = null
+        headerTitle.text = "State Explorer: ${field.qualifiedPath}"
+        stateExplorerPanel.showInvalidState(field)
+        renderMessage("State graph is unavailable for this selection.")
+        renderFlowGraph(null, emptyMessage = "State graph is unavailable for this selection.")
+        renderMermaid("")
+        hideCodePreview()
+        setButtonsEnabled(false)
+        tabs.selectedIndex = STATE_TAB_INDEX
+        updateHeaderLayout()
+    }
+
+    fun showStateAnalysisError(field: StateFieldInfo) {
+        currentStateGraph = null
+        currentAction = null
+        currentGraph = null
+        currentPreviewTarget = null
+        headerTitle.text = "State Explorer: ${field.qualifiedPath}"
+        stateExplorerPanel.showAnalysisError(field)
+        renderMessage("Could not build the state graph for this field.")
+        renderFlowGraph(null, emptyMessage = "Could not build the state graph for this field.")
+        renderMermaid("")
+        hideCodePreview()
+        setButtonsEnabled(false)
+        tabs.selectedIndex = STATE_TAB_INDEX
+        updateHeaderLayout()
+    }
+
+    fun showStateLoading(field: StateFieldInfo) {
+        currentStateGraph = null
+        currentAction = null
+        currentGraph = null
+        currentPreviewTarget = null
+        headerTitle.text = "State Explorer: ${field.qualifiedPath}"
+        stateExplorerPanel.showLoadingState(field)
+        renderMessage("Loading state graph...")
+        renderFlowGraph(null, emptyMessage = "Loading state graph...")
+        renderMermaid("")
+        hideCodePreview()
+        setButtonsEnabled(false)
+        tabs.selectedIndex = STATE_TAB_INDEX
+        updateHeaderLayout()
+    }
+
+    fun showStateGraph(graph: StateFieldGraph) {
+        currentStateGraph = graph
+        currentGraph = null
+        currentAction = null
+        currentPreviewTarget = null
+        headerTitle.text = "State Explorer: ${graph.stateField.qualifiedPath}"
+        renderCurrentStateGraph(graph)
+        stateExplorerPanel.showStateGraph(graph)
+        hideCodePreview()
+        setButtonsEnabled(currentMermaid.isNotBlank())
+        tabs.selectedIndex = STATE_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -167,7 +256,7 @@ class ReduxFlowPanel(
             val reduxGraph = reduxGraphBuilder.build(visibleGraph)
             currentDiagramTargets = buildDiagramNodeTargets(reduxGraph)
             currentMermaid = mermaidRenderer.render(visibleGraph)
-            renderGraph(reduxGraph, currentDiagramTargets)
+            renderActionGraph(reduxGraph, currentDiagramTargets)
         } catch (error: Exception) {
             LOG.warn("Could not build Redux graph", error)
             currentDiagramTargets = emptyMap()
@@ -198,6 +287,25 @@ class ReduxFlowPanel(
         renderMermaid(currentMermaid)
         setButtonsEnabled(true)
         tabs.selectedIndex = GRAPH_TAB_INDEX
+        revalidate()
+        repaint()
+    }
+
+    internal fun renderCurrentStateGraph(graph: StateFieldGraph) {
+        val visibleGraph = filteredStateGraph(graph)
+        try {
+            val stateGraph = stateGraphBuilder.build(visibleGraph)
+            currentDiagramTargets = buildStateDiagramNodeTargets(stateGraph)
+            currentMermaid = stateMermaidRenderer.render(stateGraph)
+            renderStateGraph(stateGraph, currentDiagramTargets)
+        } catch (error: Exception) {
+            LOG.warn("Could not build state graph", error)
+            currentDiagramTargets = emptyMap()
+            currentMermaid = ""
+            graphPreviewPanel.showErrorMessage("Could not build state graph.")
+        }
+        renderMermaid(currentMermaid)
+        renderMessage("Use the State tab for the detailed reducer/action list.")
         revalidate()
         repaint()
     }
@@ -258,11 +366,26 @@ class ReduxFlowPanel(
             .notify(project)
     }
 
-    private fun renderGraph(
+    private fun renderActionGraph(
         graph: org.mozilla.reduxnav.graph.ReduxGraph?,
         diagramTargets: Map<String, DiagramNodeTarget> = emptyMap()
     ) {
         graphPreviewPanel.setReduxGraph(graph, diagramTargets)
+    }
+
+    private fun renderStateGraph(
+        graph: StateGraph?,
+        diagramTargets: Map<String, DiagramNodeTarget> = emptyMap()
+    ) {
+        renderFlowGraph(graph?.let(stateGraphAdapter::adapt), diagramTargets, emptyMessage = "Select a Redux state field to view its graph.")
+    }
+
+    private fun renderFlowGraph(
+        graph: org.mozilla.reduxnav.nativeflow.FlowGraph?,
+        diagramTargets: Map<String, DiagramNodeTarget> = emptyMap(),
+        emptyMessage: String = "Select a Redux Action and choose \"Show Redux Flow\"."
+    ) {
+        graphPreviewPanel.setFlowGraph(graph, diagramTargets, emptyMessage)
     }
 
     private fun renderMermaid(mermaid: String) {
@@ -275,13 +398,20 @@ class ReduxFlowPanel(
     }
 
     private fun rerenderCurrentGraph() {
-        val graph = currentGraph ?: return
-        renderCurrentGraph(graph)
+        currentGraph?.let {
+            renderCurrentGraph(it)
+            return
+        }
+        currentStateGraph?.let {
+            renderCurrentStateGraph(it)
+        }
     }
 
     private fun navigateFromDiagramNode(target: DiagramNodeTarget) {
         when (target) {
             is DiagramNodeTarget.ActionTarget -> navigateToAction(project, target.action)
+            is DiagramNodeTarget.ModificationTarget -> navigateToModification(project, target.modification)
+            is DiagramNodeTarget.StateFieldTarget -> navigateToStateField(project, target.field)
             is DiagramNodeTarget.UsageTarget -> navigateToUsage(project, target.usage)
         }
     }
@@ -291,11 +421,34 @@ class ReduxFlowPanel(
         showCodePreview(target)
     }
 
+    private fun showCodePreviewForAction(action: ActionInfo) {
+        currentPreviewTarget = null
+        codePreviewPanel.isVisible = true
+        codePreviewPanel.showAction(action)
+        mainSplitter.revalidate()
+        mainSplitter.repaint()
+    }
+
+    private fun showCodePreviewForModification(modification: StateModification) {
+        currentPreviewTarget = null
+        codePreviewPanel.isVisible = true
+        codePreviewPanel.showElement(modification.modificationPointer.element)
+        mainSplitter.revalidate()
+        mainSplitter.repaint()
+    }
+
     private fun filteredGraph(graph: ActionGraph): ActionGraph =
         if (includeTestsModel.isSelected) {
             graph
         } else {
             graph.copy(usages = graph.usages.filterNot { isTestPath(it.filePath) })
+        }
+
+    private fun filteredStateGraph(graph: StateFieldGraph): StateFieldGraph =
+        if (includeTestsModel.isSelected) {
+            graph
+        } else {
+            graph.copy(modifications = graph.modifications.filterNot { isTestPath(it.filePath) })
         }
     
     private fun updateHeaderLayout() {
@@ -356,6 +509,12 @@ class ReduxFlowPanel(
 
     internal fun isCodePreviewVisibleForTest(): Boolean = codePreviewPanel.isVisible
 
+    internal fun stateHeaderTextForTest(): String = stateExplorerPanel.headerTextForTest()
+
+    internal fun stateActionLabelsForTest(): List<String> = stateExplorerPanel.actionLabelsForTest()
+
+    internal fun stateModificationLabelsForTest(): List<String> = stateExplorerPanel.modificationLabelsForTest()
+
     internal fun stackedControlsPreferredHeightForTest(width: Int): Int {
         stackedControls.setSize(width, Int.MAX_VALUE)
         return stackedControls.preferredSize.height
@@ -409,6 +568,7 @@ class ReduxFlowPanel(
     companion object {
         private val LOG = Logger.getInstance(ReduxFlowPanel::class.java)
         private const val GRAPH_TAB_INDEX = 0
+        private const val STATE_TAB_INDEX = 3
         private const val NOTIFICATION_GROUP_ID = "Redux Navigator"
         private const val HEADER_GAP = 16
         private val sectionOrder = listOf(
@@ -430,6 +590,32 @@ class ReduxFlowPanel(
                 }
             }
         }
+
+        internal fun buildStateDiagramNodeTargets(
+            graph: StateGraph
+        ): Map<String, DiagramNodeTarget> =
+            buildMap {
+                graph.nodes.forEach { node ->
+                    when (node) {
+                        is org.mozilla.reduxnav.state.StateActionNode -> {
+                            val action = (node.label.takeIf { it != "Unknown action" })
+                            val matchingAction = when {
+                                action == null -> null
+                                else -> graph.nodes
+                                    .filterIsInstance<org.mozilla.reduxnav.state.StateReducerNode>()
+                                    .mapNotNull { it.modification.action }
+                                    .distinctBy { it.id }
+                                    .firstOrNull { it.displayName == action }
+                            }
+                            if (matchingAction != null) {
+                                put(node.id, DiagramNodeTarget.ActionTarget(matchingAction))
+                            }
+                        }
+                        is org.mozilla.reduxnav.state.StateFieldNode -> put(node.id, DiagramNodeTarget.StateFieldTarget(node.field))
+                        is org.mozilla.reduxnav.state.StateReducerNode -> put(node.id, DiagramNodeTarget.ModificationTarget(node.modification))
+                    }
+                }
+            }
 
         internal fun buildSections(graph: ActionGraph): List<ReduxFlowSection> {
             val grouped = graph.usages.groupBy { it.kind }
@@ -465,6 +651,24 @@ class ReduxFlowPanel(
         internal fun navigateToAction(project: Project, action: ActionInfo) {
             val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
                 val element = action.declaration?.element ?: return@compute null
+                val file = element.containingFile?.virtualFile ?: return@compute null
+                OpenFileDescriptor(project, file, element.textOffset)
+            } ?: return
+            descriptor.navigate(true)
+        }
+
+        internal fun navigateToModification(project: Project, modification: StateModification) {
+            val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
+                val element = modification.modificationPointer.element ?: return@compute null
+                val file = element.containingFile?.virtualFile ?: return@compute null
+                OpenFileDescriptor(project, file, element.textOffset)
+            } ?: return
+            descriptor.navigate(true)
+        }
+
+        internal fun navigateToStateField(project: Project, field: StateFieldInfo) {
+            val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
+                val element = field.declarationPointer?.element ?: return@compute null
                 val file = element.containingFile?.virtualFile ?: return@compute null
                 OpenFileDescriptor(project, file, element.textOffset)
             } ?: return

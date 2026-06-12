@@ -27,6 +27,7 @@ The tool window shows three tabs:
 - `Flow`
 - `Graph`
 - `Mermaid Source`
+- `State`
 
 The `Flow` tab contains:
 
@@ -37,6 +38,38 @@ The `Flow` tab contains:
 - Other references when present
 
 Each row is clickable and navigates to the source location.
+
+### Phase 6: State-Centric Explorer
+
+Use `Show Redux State Changes` from the editor context menu when the caret is on a Kotlin state property declaration or a reducer named argument such as `selectedTabId = ...`.
+
+The `State` tab answers:
+
+```text
+What can change this state field?
+```
+
+It shows:
+
+- the selected state field
+- actions associated with modifications
+- reducer modification sites with clickable navigation rows
+
+Supported patterns:
+
+- `state.copy(...)`
+- constructor rebuilds like `BrowserState(...)`
+- `when(action)` branch association
+- simple nested copies when the nested state field can be inferred locally
+
+Known limitations:
+
+- static heuristic analysis only
+- Kotlin-first
+- limited interprocedural support
+- helper-based state changes may be missed
+- ambiguous reducer branches are shown as `Unknown action`
+- state graph visualization is not implemented yet
 
 ### Phase 5: Native Graph Visualization
 

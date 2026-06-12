@@ -12,7 +12,9 @@
             language="kotlin"
             implementationClass="org.mozilla.reduxnav.gutter.ReduxActionLineMarkerProvider"/>
         <codeInsight.daemonBoundCodeVisionProvider implementation="org.mozilla.reduxnav.inlay.ReduxActionInlayHintsProvider"/>
+        <codeInsight.daemonBoundCodeVisionProvider implementation="org.mozilla.reduxnav.inlay.ReduxStateInlayHintsProvider"/>
         <config.codeVisionGroupSettingProvider implementation="org.mozilla.reduxnav.inlay.ReduxActionCodeVisionGroupSettingProvider"/>
+        <config.codeVisionGroupSettingProvider implementation="org.mozilla.reduxnav.inlay.ReduxStateCodeVisionGroupSettingProvider"/>
         <toolWindow
             id="Redux Flow"
             anchor="right"
@@ -38,6 +40,13 @@
             class="org.mozilla.reduxnav.toolwindow.ShowReduxFlowAction"
             text="Show Redux Flow"
             description="Show Redux dispatch, middleware, and reducer flow for this action">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
+        <action
+            id="org.mozilla.reduxnav.ShowReduxStateChanges"
+            class="org.mozilla.reduxnav.state.StateExplorerAction"
+            text="Show Redux State Changes"
+            description="Show Redux actions and reducers that modify this state field">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
     </actions>
