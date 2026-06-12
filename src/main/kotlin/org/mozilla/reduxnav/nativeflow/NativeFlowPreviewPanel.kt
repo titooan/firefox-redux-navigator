@@ -13,6 +13,7 @@ import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
+import javax.swing.JViewport
 
 class NativeFlowPreviewPanel(
     private val parser: MermaidSubsetParser = MermaidSubsetParser(),
@@ -23,6 +24,7 @@ class NativeFlowPreviewPanel(
 
     init {
         border = JBUI.Borders.empty()
+        scrollPane.viewport.scrollMode = JViewport.SIMPLE_SCROLL_MODE
         installZoomSupport()
         showMessage("Select a Redux Action and choose \"Show Redux Flow\".")
     }
@@ -119,4 +121,6 @@ class NativeFlowPreviewPanel(
 
     private fun MouseWheelEvent.isZoomGesture(): Boolean =
         modifiersEx and (InputEvent.CTRL_DOWN_MASK or InputEvent.META_DOWN_MASK) != 0
+
+    internal fun viewportScrollMode(): Int = scrollPane.viewport.scrollMode
 }
