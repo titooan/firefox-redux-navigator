@@ -67,11 +67,18 @@ class ActionSymbolResolver(
     private fun looksLikeAction(declaration: KtClassOrObject, name: String): Boolean {
         if (conventions.actionNameSuffixes.any { name.endsWith(it) }) return true
         if (declaration.superTypeListEntries.any { entry ->
-            val text = entry.text
-            conventions.actionBaseTypeNames.any { base -> text.contains(base) }
+            val simpleTypeName = entry.typeReference
+                ?.text
+                ?.substringBefore("<")
+                ?.substringBefore("(")
+                ?.substringBefore("?")
+                ?.substringAfterLast('.')
+            simpleTypeName != null && simpleTypeName in conventions.actionBaseTypeNames
         }) return true
 
-        val parent = declaration.parent as? KtClassOrObject ?: return false
+        val parent = generateSequence(declaration.parent) { it.parent }
+            .filterIsInstance<KtClassOrObject>()
+            .firstOrNull() ?: return false
         val parentName = parent.name ?: return false
         return looksLikeAction(parent, parentName)
     }

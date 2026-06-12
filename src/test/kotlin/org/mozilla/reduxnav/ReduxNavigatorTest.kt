@@ -3,6 +3,7 @@ package org.mozilla.reduxnav
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.jetbrains.kotlin.psi.KtDotQualifiedExpression
+import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.jetbrains.kotlin.psi.KtImportDirective
 import org.jetbrains.kotlin.psi.KtNameReferenceExpression
 import org.jetbrains.kotlin.psi.KtObjectDeclaration
@@ -160,6 +161,29 @@ class ReduxNavigatorTest : BasePlatformTestCase() {
         val provider = ReduxActionLineMarkerProvider()
 
         assertNull(provider.markerForElement(importedLeaf.firstChild))
+    }
+
+    fun testDeclarationWithActionNamedSupertypeIsNotTreatedAsReduxAction() {
+        myFixture.configureByText(
+            "HomeActivity.kt",
+            """
+            interface CrashActionDispatcher
+
+            open class <caret>HomeActivity : CrashActionDispatcher
+            """.trimIndent()
+        )
+
+        val declaration = PsiTreeUtil.findChildOfType(myFixture.file, KtObjectDeclaration::class.java)
+        assertNull(declaration)
+
+        val classNameLeaf = PsiTreeUtil.findChildOfType(myFixture.file, KtClassOrObject::class.java)
+            ?.nameIdentifier
+            ?: error("Expected HomeActivity declaration")
+        val provider = ReduxActionLineMarkerProvider()
+
+        assertNull(ActionSymbolResolver().resolveDeclaration(classNameLeaf))
+        assertNull(provider.markerForElement(classNameLeaf))
+        assertEmpty(myFixture.findGuttersAtCaret())
     }
 
     fun testUsageGraphContainsOnlySpecificActionUsages() {
