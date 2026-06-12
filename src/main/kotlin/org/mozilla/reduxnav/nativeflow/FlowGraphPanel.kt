@@ -4,14 +4,19 @@ import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import java.awt.BasicStroke
 import java.awt.Color
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.Graphics
 import java.awt.Graphics2D
+import java.awt.Point
 import java.awt.RenderingHints
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import java.awt.geom.Path2D
 import java.awt.geom.PathIterator
 import java.awt.geom.RoundRectangle2D
 import javax.swing.JComponent
+import javax.swing.ToolTipManager
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -23,11 +28,15 @@ class FlowGraphPanel(
     renderedGraph: RenderedGraph? = null
 ) : JComponent() {
     private var renderedGraph: RenderedGraph? = renderedGraph
+    private var nodeTargets: Map<String, DiagramNodeTarget> = emptyMap()
+    private var onNodeClick: ((String) -> Unit)? = null
     private var scale = 1.0
 
     init {
         isOpaque = true
         border = JBUI.Borders.empty(16)
+        ToolTipManager.sharedInstance().registerComponent(this)
+        installNodeInteraction()
         updatePreferredSize()
     }
 
@@ -35,6 +44,17 @@ class FlowGraphPanel(
         renderedGraph = graph
         scale = 1.0
         updatePreferredSize()
+        updateCursorFor(null)
+        repaint()
+    }
+
+    fun setNodeTargets(
+        nodeTargets: Map<String, DiagramNodeTarget>,
+        onNodeClick: ((String) -> Unit)? = null
+    ) {
+        this.nodeTargets = nodeTargets
+        this.onNodeClick = onNodeClick
+        updateCursorFor(null)
         repaint()
     }
 
@@ -66,6 +86,12 @@ class FlowGraphPanel(
     }
 
     override fun getPreferredSize(): Dimension = super.getPreferredSize()
+
+    override fun getToolTipText(event: MouseEvent): String? =
+        event.point
+            ?.let(::nodeAt)
+            ?.takeIf { it.id in nodeTargets }
+            ?.let { nodeTargets[it.id]?.tooltipText }
 
     override fun paintComponent(graphics: Graphics) {
         super.paintComponent(graphics)
@@ -158,6 +184,47 @@ class FlowGraphPanel(
         }
     }
 
+    private fun installNodeInteraction() {
+        val listener = object : MouseAdapter() {
+            override fun mouseMoved(event: MouseEvent) {
+                updateCursorFor(event.point)
+            }
+
+            override fun mouseExited(event: MouseEvent) {
+                updateCursorFor(null)
+            }
+
+            override fun mouseClicked(event: MouseEvent) {
+                if (event.button != MouseEvent.BUTTON1) return
+                val nodeId = nodeAt(event.point)?.id ?: return
+                if (nodeId !in nodeTargets) return
+                onNodeClick?.invoke(nodeId)
+            }
+        }
+        addMouseMotionListener(listener)
+        addMouseListener(listener)
+    }
+
+    private fun updateCursorFor(point: Point?) {
+        cursor = if (point != null && nodeAt(point)?.id in nodeTargets) {
+            Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        } else {
+            Cursor.getDefaultCursor()
+        }
+    }
+
+    private fun nodeAt(point: Point): RenderedNode? {
+        val graph = renderedGraph ?: return null
+        val x = point.x / scale
+        val y = point.y / scale
+        return graph.nodes.lastOrNull { node ->
+            x >= node.x &&
+                x <= node.x + node.width &&
+                y >= node.y &&
+                y <= node.y + node.height
+        }
+    }
+
     private fun edgeColor(edge: RenderedEdge): Color {
         val graph = renderedGraph ?: return JBColor.border()
         return FlowEdgePalette.colorFor(edge, graph.nodes.associateBy { it.id })
@@ -167,6 +234,13 @@ class FlowGraphPanel(
         val graph = renderedGraph ?: return emptyList()
         val nodesById = graph.nodes.associateBy { it.id }
         return graph.edges.map { FlowEdgePalette.colorFor(it, nodesById) }
+    }
+
+    internal fun nodeIdAtForTest(x: Int, y: Int): String? = nodeAt(Point(x, y))?.id
+
+    internal fun cursorTypeForTest(x: Int, y: Int): Int {
+        updateCursorFor(Point(x, y))
+        return cursor.type
     }
 
     private fun createRoundedPath(points: List<Point2D>): Path2D.Double =

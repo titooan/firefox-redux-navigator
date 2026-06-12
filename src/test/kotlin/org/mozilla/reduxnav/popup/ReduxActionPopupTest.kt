@@ -1,14 +1,21 @@
 package org.mozilla.reduxnav.popup
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import org.mozilla.reduxnav.model.ActionId
+import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.model.toSmartPointer
 import java.awt.Point
+import java.awt.Component
+import java.awt.Container
 import java.awt.event.MouseEvent
 import java.io.File
+import javax.swing.JButton
+import javax.swing.JComboBox
 import javax.swing.JLabel
 import javax.swing.JPanel
+import javax.swing.JPopupMenu
 
 class ReduxActionPopupTest : BasePlatformTestCase() {
     override fun tearDown() {
@@ -208,6 +215,22 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
         assertTrue(ReduxActionPopup.shouldCancelForOutsideClick(popupContent, event))
     }
 
+    fun testOutsideClickCancellationIgnoresComboPopupSelectionsFromToolbar() {
+        val popupContent = JPanel()
+        val comboBox = JComboBox(arrayOf("All files", "Test files"))
+        popupContent.add(comboBox)
+
+        val comboPopup = JPopupMenu().apply {
+            invoker = comboBox
+        }
+        val menuItem = JLabel("Test files")
+        comboPopup.add(menuItem)
+
+        val event = MouseEvent(menuItem, MouseEvent.MOUSE_PRESSED, 0L, 0, 3, 4, 1, false)
+
+        assertFalse(ReduxActionPopup.shouldCancelForOutsideClick(popupContent, event))
+    }
+
     fun testTestOccurrencesUseGreenBackground() {
         val usage = usage(
             line = "dispatch(AddItemForRemoval)",
@@ -263,6 +286,20 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
         assertEquals(0, second.cancelCalls)
     }
 
+    fun testOpenReduxFlowButtonInvokesProvidedCallback() {
+        val list = ReduxActionPopup.createList(ReduxActionPopup.loadingEntries())
+        val controller = PopupListController(list)
+        val action = ActionInfo(ActionId("AddItemForRemoval"), "AddItemForRemoval", null)
+        var openFlowCalls = 0
+        val toolbar = ReduxActionPopup.createToolbar(project, action, controller) {
+            openFlowCalls += 1
+        }
+
+        findButton(toolbar, "Open Redux Flow")?.doClick()
+
+        assertEquals(1, openFlowCalls)
+    }
+
     private fun usage(line: String, kind: ReduxUsageKind, filePath: String? = null): ReduxUsage {
         val file = myFixture.configureByText(
             "${kind.name.lowercase()}.kt",
@@ -289,6 +326,21 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
             is PopupEntry.Header -> "${if (entry.expanded) "▼" else "▶"} ${entry.text}"
             is PopupEntry.UsageEntry -> entry.usage.displayText
         }
+    }
+
+    private fun findButton(component: Component, text: String): JButton? {
+        if (component is JButton && component.text == text) {
+            return component
+        }
+        if (component is Container) {
+            component.components.forEach { child ->
+                val match = findButton(child, text)
+                if (match != null) {
+                    return match
+                }
+            }
+        }
+        return null
     }
 
     private class RecordingPopupHandle : PopupHandle {

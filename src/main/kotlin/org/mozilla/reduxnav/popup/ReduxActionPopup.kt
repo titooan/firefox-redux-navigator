@@ -42,6 +42,7 @@ import javax.swing.JComboBox
 import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.JPopupMenu
 import javax.swing.SwingUtilities
 import javax.swing.SwingConstants
 
@@ -67,7 +68,11 @@ object ReduxActionPopup {
         )
         val list = createList(loadingEntries())
         val controller = PopupListController(list)
-        val content = createPopupContent(project, action, controller)
+        lateinit var popupHandle: PopupHandle
+        val content = createPopupContent(project, action, controller) {
+            ReduxFlowToolWindowService.getInstance(project).showFlow(action)
+            popupHandle.cancel()
+        }
 
         val popup = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(content, list)
@@ -77,7 +82,7 @@ object ReduxActionPopup {
             .setRequestFocus(false)
             .setCancelOnClickOutside(false)
             .createPopup()
-        val popupHandle = JBPopupHandle(popup)
+        popupHandle = JBPopupHandle(popup)
         registerActivePopup(popupHandle)
         popupHandle.installOutsideClickCancellation()
         popup.addListener(object : JBPopupListener {
@@ -105,9 +110,12 @@ object ReduxActionPopup {
                     }
                     is PopupEntry.UsageEntry -> {
                         if (e.clickCount < 2) return
-                        val target = entry.usage.element.element ?: return
-                        val file = target.containingFile?.virtualFile ?: return
-                        OpenFileDescriptor(project, file, target.textOffset).navigate(true)
+                        val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
+                            val target = entry.usage.element.element ?: return@compute null
+                            val file = target.containingFile?.virtualFile ?: return@compute null
+                            OpenFileDescriptor(project, file, target.textOffset)
+                        } ?: return
+                        descriptor.navigate(true)
                         popup.cancel()
                     }
                 }
@@ -167,8 +175,13 @@ object ReduxActionPopup {
 
     internal fun createContent(list: JBList<PopupEntry>) = JBScrollPane(list)
 
-    internal fun createPopupContent(project: Project, action: ActionInfo, controller: PopupListController): JComponent {
-        val toolbar = createToolbar(project, action, controller)
+    internal fun createPopupContent(
+        project: Project,
+        action: ActionInfo,
+        controller: PopupListController,
+        onOpenFlow: () -> Unit = { ReduxFlowToolWindowService.getInstance(project).showFlow(action) }
+    ): JComponent {
+        val toolbar = createToolbar(project, action, controller, onOpenFlow)
         val toolbarHeight = toolbar.preferredSize.height
         toolbar.maximumSize = Dimension(Int.MAX_VALUE, toolbarHeight)
         toolbar.minimumSize = Dimension(0, toolbarHeight)
@@ -258,16 +271,27 @@ object ReduxActionPopup {
         mouseEvent: MouseEvent
     ): Boolean {
         val source = mouseEvent.component ?: return false
-        return !SwingUtilities.isDescendingFrom(source, popupContent)
+        if (SwingUtilities.isDescendingFrom(source, popupContent)) {
+            return false
+        }
+
+        val popupMenu = SwingUtilities.getAncestorOfClass(JPopupMenu::class.java, source) as? JPopupMenu
+        val invoker = popupMenu?.invoker
+        return invoker == null || !SwingUtilities.isDescendingFrom(invoker, popupContent)
     }
 
-    private fun createToolbar(project: Project, action: ActionInfo, controller: PopupListController): JComponent {
+    internal fun createToolbar(
+        project: Project,
+        action: ActionInfo,
+        controller: PopupListController,
+        onOpenFlow: () -> Unit = { ReduxFlowToolWindowService.getInstance(project).showFlow(action) }
+    ): JComponent {
         val panel = JPanel(GridBagLayout()).apply {
             border = JBUI.Borders.empty(6, 8, 4, 8)
         }
 
         val openFlowButton = JButton("Open Redux Flow").apply {
-            addActionListener { ReduxFlowToolWindowService.getInstance(project).showFlow(action) }
+            addActionListener { onOpenFlow() }
         }
         panel.add(openFlowButton, constraints(0, 0.0, GridBagConstraints.WEST))
 

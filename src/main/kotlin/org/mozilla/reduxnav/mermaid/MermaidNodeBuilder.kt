@@ -17,11 +17,18 @@ class MermaidNodeBuilder {
         val to: String
     )
 
+    data class MermaidUsageNode(
+        val id: String,
+        val label: String,
+        val usage: ReduxUsage,
+        val isTestNode: Boolean = false
+    )
+
     data class MermaidGraph(
         val action: MermaidNode,
-        val dispatches: List<MermaidNode>,
-        val middlewares: List<MermaidNode>,
-        val reducers: List<MermaidNode>,
+        val dispatches: List<MermaidUsageNode>,
+        val middlewares: List<MermaidUsageNode>,
+        val reducers: List<MermaidUsageNode>,
         val edges: List<MermaidEdge>
     )
 
@@ -62,16 +69,17 @@ class MermaidNodeBuilder {
         actionGraph: ActionGraph,
         kind: ReduxUsageKind,
         prefix: String
-    ): List<MermaidNode> =
+    ): List<MermaidUsageNode> =
         actionGraph.usages
             .asSequence()
             .filter { it.kind == kind }
             .distinctBy { "${it.filePath}:${it.line}" }
             .sortedWith(compareBy<ReduxUsage> { it.filePath }.thenBy { it.line })
             .mapIndexed { index, usage ->
-                MermaidNode(
+                MermaidUsageNode(
                     id = "${prefix}_$index",
                     label = MermaidEscaper.escape("${usage.fileName}:${usage.line}"),
+                    usage = usage,
                     isTestNode = isTestPath(usage.filePath)
                 )
             }

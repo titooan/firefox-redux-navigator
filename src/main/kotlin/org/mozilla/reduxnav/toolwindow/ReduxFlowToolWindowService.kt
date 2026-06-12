@@ -3,8 +3,10 @@ package org.mozilla.reduxnav.toolwindow
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.psi.PsiElement
 import org.mozilla.reduxnav.analysis.ReduxActionGraphCache
 import org.mozilla.reduxnav.model.ActionInfo
 
@@ -32,7 +34,9 @@ class ReduxFlowToolWindowService(private val project: Project) {
             return
         }
 
-        val declaration = action.declaration?.element
+        val declaration = ReadAction.compute<PsiElement?, RuntimeException> {
+            action.declaration?.element?.takeIf { it.isValid }
+        }
         if (declaration == null || !declaration.isValid) {
             component.showInvalidAction(action)
             return

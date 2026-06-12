@@ -19,11 +19,13 @@ import javax.swing.SwingUtilities
 import javax.swing.JViewport
 
 class NativeFlowPreviewPanel(
+    private val onNodeClick: ((DiagramNodeTarget) -> Unit)? = null,
     private val parser: MermaidSubsetParser = MermaidSubsetParser(),
     private val layouter: FlowGraphLayouter = FlowGraphLayouter()
 ) : JPanel(BorderLayout()) {
     private val graphPanel = FlowGraphPanel()
     private val scrollPane = JBScrollPane(graphPanel)
+    private var nodeTargets: Map<String, DiagramNodeTarget> = emptyMap()
 
     init {
         border = JBUI.Borders.empty()
@@ -32,7 +34,11 @@ class NativeFlowPreviewPanel(
         showMessage("Select a Redux Action and choose \"Show Redux Flow\".")
     }
 
-    fun setMermaidSource(source: String) {
+    fun setMermaidSource(
+        source: String,
+        nodeTargets: Map<String, DiagramNodeTarget> = emptyMap()
+    ) {
+        this.nodeTargets = nodeTargets
         if (source.isBlank()) {
             showMessage("Select a Redux Action and choose \"Show Redux Flow\".")
             return
@@ -50,6 +56,10 @@ class NativeFlowPreviewPanel(
     private fun showGraph(renderedGraph: RenderedGraph) {
         removeAll()
         graphPanel.setRenderedGraph(renderedGraph)
+        graphPanel.setNodeTargets(nodeTargets) { nodeId ->
+            val target = nodeTargets[nodeId] ?: return@setNodeTargets
+            onNodeClick?.invoke(target)
+        }
         add(createHeader(), BorderLayout.NORTH)
         add(scrollPane, BorderLayout.CENTER)
         revalidate()
@@ -61,7 +71,9 @@ class NativeFlowPreviewPanel(
 
     private fun showMessage(message: String) {
         removeAll()
+        nodeTargets = emptyMap()
         graphPanel.setRenderedGraph(null)
+        graphPanel.setNodeTargets(emptyMap())
         add(JBLabel("<html>${message.replace("\n", "<br/>")}</html>"), BorderLayout.NORTH)
         revalidate()
         repaint()
@@ -69,6 +81,9 @@ class NativeFlowPreviewPanel(
 
     private fun showError(message: String) {
         removeAll()
+        nodeTargets = emptyMap()
+        graphPanel.setRenderedGraph(null)
+        graphPanel.setNodeTargets(emptyMap())
         add(
             JPanel(BorderLayout()).apply {
                 border = JBUI.Borders.empty(12)
@@ -168,4 +183,6 @@ class NativeFlowPreviewPanel(
         createToolbar().components
             .filterIsInstance<JButton>()
             .map { it.isFocusable to it.isFocusPainted }
+
+    internal fun interactiveNodeIdsForTest(): Set<String> = nodeTargets.keys
 }

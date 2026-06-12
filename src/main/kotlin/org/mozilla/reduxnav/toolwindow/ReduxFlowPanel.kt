@@ -6,6 +6,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.application.ReadAction
 import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -19,10 +20,12 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.StartupUiUtil
 import org.mozilla.reduxnav.mermaid.MermaidFlowRenderer
 import org.mozilla.reduxnav.mermaid.MermaidFlowStyle
+import org.mozilla.reduxnav.mermaid.MermaidNodeBuilder
 import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
+import org.mozilla.reduxnav.nativeflow.DiagramNodeTarget
 import org.mozilla.reduxnav.nativeflow.NativeFlowPreviewPanel
 import org.mozilla.reduxnav.popup.isTestPath
 import org.mozilla.reduxnav.ui.withTransientFocusRing
@@ -44,10 +47,12 @@ class ReduxFlowPanel(
     private val project: Project,
     private val onRefresh: () -> Unit
 ) : JPanel(BorderLayout()), Disposable {
+    private val mermaidNodeBuilder = MermaidNodeBuilder()
     private val mermaidRenderer = MermaidFlowRenderer(
+        nodeBuilder = mermaidNodeBuilder,
         style = if (StartupUiUtil.isUnderDarcula) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
     )
-    private val mermaidPreviewPanel = NativeFlowPreviewPanel()
+    private val mermaidPreviewPanel = NativeFlowPreviewPanel(::navigateFromDiagramNode)
     private val headerTitle = JBLabel("Redux Flow").apply {
         font = JBFont.h3().asBold()
     }
@@ -73,14 +78,15 @@ class ReduxFlowPanel(
     }
     private val tabs = JBTabbedPane().apply {
         border = JBUI.Borders.empty()
-        addTab("Flow", JBScrollPane(contentPanel))
         addTab("Diagram", mermaidPreviewPanel)
         addTab("Mermaid Source", JBScrollPane(mermaidTextArea))
+        addTab("Flow", JBScrollPane(contentPanel))
     }
 
     private var currentAction: ActionInfo? = null
     private var currentGraph: ActionGraph? = null
     private var currentMermaid: String = ""
+    private var currentDiagramTargets: Map<String, DiagramNodeTarget> = emptyMap()
 
     init {
         border = JBUI.Borders.empty()
@@ -94,11 +100,12 @@ class ReduxFlowPanel(
         currentAction = null
         currentGraph = null
         currentMermaid = ""
+        currentDiagramTargets = emptyMap()
         headerTitle.text = "Redux Flow"
         renderMessage("Select a Redux Action and choose \"Show Redux Flow\".")
         renderMermaid("")
         setButtonsEnabled(false)
-        tabs.selectedIndex = FLOW_TAB_INDEX
+        tabs.selectedIndex = DIAGRAM_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -106,11 +113,12 @@ class ReduxFlowPanel(
         currentAction = action
         currentGraph = null
         currentMermaid = ""
+        currentDiagramTargets = emptyMap()
         headerTitle.text = "Redux Flow: ${action.displayName}"
         renderMessage("The selected Redux Action is no longer valid. Re-run Show Redux Flow.")
         renderMermaid("")
         setButtonsEnabled(false)
-        tabs.selectedIndex = FLOW_TAB_INDEX
+        tabs.selectedIndex = DIAGRAM_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -118,11 +126,12 @@ class ReduxFlowPanel(
         currentAction = action
         currentGraph = null
         currentMermaid = ""
+        currentDiagramTargets = emptyMap()
         headerTitle.text = "Redux Flow: ${action.displayName}"
         renderMessage("Could not build Redux flow for this action.")
         renderMermaid("")
         setButtonsEnabled(false)
-        tabs.selectedIndex = FLOW_TAB_INDEX
+        tabs.selectedIndex = DIAGRAM_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -135,6 +144,7 @@ class ReduxFlowPanel(
 
     internal fun renderCurrentGraph(graph: ActionGraph) {
         val visibleGraph = filteredGraph(graph)
+        currentDiagramTargets = buildDiagramNodeTargets(visibleGraph, mermaidNodeBuilder)
         currentMermaid = mermaidRenderer.render(visibleGraph)
         headerTitle.text = "Redux Flow: ${graph.action.displayName}"
         contentPanel.removeAll()
@@ -149,7 +159,7 @@ class ReduxFlowPanel(
             }
         }
 
-        renderMermaid(currentMermaid)
+        renderMermaid(currentMermaid, currentDiagramTargets)
         setButtonsEnabled(true)
         revalidate()
         repaint()
@@ -211,10 +221,13 @@ class ReduxFlowPanel(
             .notify(project)
     }
 
-    private fun renderMermaid(mermaid: String) {
+    private fun renderMermaid(
+        mermaid: String,
+        diagramTargets: Map<String, DiagramNodeTarget> = emptyMap()
+    ) {
         mermaidTextArea.text = mermaid
         mermaidTextArea.caretPosition = 0
-        mermaidPreviewPanel.setMermaidSource(mermaid)
+        mermaidPreviewPanel.setMermaidSource(mermaid, diagramTargets)
     }
 
     private fun setButtonsEnabled(enabled: Boolean) {
@@ -224,6 +237,13 @@ class ReduxFlowPanel(
     private fun rerenderCurrentGraph() {
         val graph = currentGraph ?: return
         renderCurrentGraph(graph)
+    }
+
+    private fun navigateFromDiagramNode(target: DiagramNodeTarget) {
+        when (target) {
+            is DiagramNodeTarget.ActionTarget -> navigateToAction(project, target.action)
+            is DiagramNodeTarget.UsageTarget -> navigateToUsage(project, target.usage)
+        }
     }
 
     private fun filteredGraph(graph: ActionGraph): ActionGraph =
@@ -247,7 +267,12 @@ class ReduxFlowPanel(
 
     internal fun mermaidText(): String = mermaidTextArea.text
 
+    internal fun diagramNodeTargetsForTest(): Map<String, DiagramNodeTarget> = currentDiagramTargets
+
     internal fun selectedTabTitle(): String = tabs.getTitleAt(tabs.selectedIndex)
+
+    internal fun tabTitlesForTest(): List<String> =
+        (0 until tabs.tabCount).map(tabs::getTitleAt)
 
     internal fun setIncludeTestsForTest(include: Boolean) {
         includeTestsModel.isSelected = include
@@ -291,7 +316,7 @@ class ReduxFlowPanel(
         }
 
     companion object {
-        private const val FLOW_TAB_INDEX = 0
+        private const val DIAGRAM_TAB_INDEX = 0
         private const val NOTIFICATION_GROUP_ID = "Redux Navigator"
         private const val HEADER_GAP = 16
         private val sectionOrder = listOf(
@@ -300,6 +325,19 @@ class ReduxFlowPanel(
             ReduxUsageKind.REDUCER,
             ReduxUsageKind.OTHER
         )
+
+        internal fun buildDiagramNodeTargets(
+            graph: ActionGraph,
+            nodeBuilder: MermaidNodeBuilder = MermaidNodeBuilder()
+        ): Map<String, DiagramNodeTarget> {
+            val mermaidGraph = nodeBuilder.build(graph)
+            return buildMap {
+                put("action", DiagramNodeTarget.ActionTarget(graph.action))
+                mermaidGraph.dispatches.forEach { put(it.id, DiagramNodeTarget.UsageTarget(it.usage)) }
+                mermaidGraph.middlewares.forEach { put(it.id, DiagramNodeTarget.UsageTarget(it.usage)) }
+                mermaidGraph.reducers.forEach { put(it.id, DiagramNodeTarget.UsageTarget(it.usage)) }
+            }
+        }
 
         internal fun buildSections(graph: ActionGraph): List<ReduxFlowSection> {
             val grouped = graph.usages.groupBy { it.kind }
@@ -324,15 +362,21 @@ class ReduxFlowPanel(
         ): ActionLink = ActionLink(text) { onNavigate() }
 
         internal fun navigateToUsage(project: Project, usage: ReduxUsage) {
-            val element = usage.element.element ?: return
-            val file = element.containingFile?.virtualFile ?: return
-            OpenFileDescriptor(project, file, element.textOffset).navigate(true)
+            val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
+                val element = usage.element.element ?: return@compute null
+                val file = element.containingFile?.virtualFile ?: return@compute null
+                OpenFileDescriptor(project, file, element.textOffset)
+            } ?: return
+            descriptor.navigate(true)
         }
 
         internal fun navigateToAction(project: Project, action: ActionInfo) {
-            val element = action.declaration?.element ?: return
-            val file = element.containingFile?.virtualFile ?: return
-            OpenFileDescriptor(project, file, element.textOffset).navigate(true)
+            val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
+                val element = action.declaration?.element ?: return@compute null
+                val file = element.containingFile?.virtualFile ?: return@compute null
+                OpenFileDescriptor(project, file, element.textOffset)
+            } ?: return
+            descriptor.navigate(true)
         }
 
         private fun countLabel(count: Int, singular: String, plural: String): String =

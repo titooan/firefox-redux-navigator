@@ -1,9 +1,13 @@
 package org.mozilla.reduxnav.nativeflow
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mozilla.reduxnav.model.ActionId
+import org.mozilla.reduxnav.model.ActionInfo
 import java.awt.Color
+import java.awt.Cursor
 
 class FlowGraphPanelTest {
     @Test
@@ -94,6 +98,66 @@ class FlowGraphPanelTest {
         )
 
         assertEquals(listOf("MOVE_TO", "LINE_TO"), segmentTypes)
+    }
+
+    @Test
+    fun hitTestingReturnsNodeInsideBounds() {
+        val panel = FlowGraphPanel(
+            RenderedGraph(
+                width = 300.0,
+                height = 120.0,
+                nodes = listOf(
+                    node("dispatch_0", FlowNodeKind.DISPATCH).copy(x = 20.0, y = 10.0)
+                ),
+                edges = emptyList()
+            )
+        )
+
+        assertEquals("dispatch_0", panel.nodeIdAtForTest(40, 20))
+    }
+
+    @Test
+    fun hitTestingReturnsNullOutsideBounds() {
+        val panel = FlowGraphPanel(
+            RenderedGraph(
+                width = 300.0,
+                height = 120.0,
+                nodes = listOf(
+                    node("dispatch_0", FlowNodeKind.DISPATCH).copy(x = 20.0, y = 10.0)
+                ),
+                edges = emptyList()
+            )
+        )
+
+        assertNull(panel.nodeIdAtForTest(5, 5))
+    }
+
+    @Test
+    fun hoverUsesHandCursorOnlyForClickableNodes() {
+        val panel = FlowGraphPanel(
+            RenderedGraph(
+                width = 300.0,
+                height = 120.0,
+                nodes = listOf(
+                    node("dispatch_0", FlowNodeKind.DISPATCH).copy(x = 20.0, y = 10.0)
+                ),
+                edges = emptyList()
+            )
+        )
+        panel.setNodeTargets(
+            mapOf(
+                "dispatch_0" to DiagramNodeTarget.ActionTarget(
+                    action = ActionInfo(
+                        id = ActionId("dispatch_0"),
+                        displayName = "DispatchAction",
+                        declaration = null
+                    )
+                )
+            )
+        )
+
+        assertEquals(Cursor.HAND_CURSOR, panel.cursorTypeForTest(40, 20))
+        assertEquals(Cursor.DEFAULT_CURSOR, panel.cursorTypeForTest(5, 5))
     }
 
     private fun node(id: String, kind: FlowNodeKind, isTestNode: Boolean = false): RenderedNode =

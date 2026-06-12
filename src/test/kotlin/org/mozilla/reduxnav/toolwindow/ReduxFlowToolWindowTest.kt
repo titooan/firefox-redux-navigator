@@ -3,11 +3,13 @@ package org.mozilla.reduxnav.toolwindow
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.mozilla.reduxnav.analysis.ActionSymbolResolver
+import org.mozilla.reduxnav.mermaid.MermaidNodeBuilder
 import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.model.toSmartPointer
+import org.mozilla.reduxnav.nativeflow.DiagramNodeTarget
 import java.io.File
 
 class ReduxFlowToolWindowTest : BasePlatformTestCase() {
@@ -110,6 +112,37 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         assertTrue(panel.mermaidText().contains("action --> reducer_0"))
     }
 
+    fun testBuildDiagramNodeTargetsUsesStableMermaidIds() {
+        val action = actionInfo("AddTabAction")
+        val dispatch = usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH)
+        val middleware = usage("Middleware.kt", "/work/Middleware.kt", 12, ReduxUsageKind.MIDDLEWARE)
+        val reducer = usage("Reducer.kt", "/work/Reducer.kt", 20, ReduxUsageKind.REDUCER)
+        val graph = ActionGraph(action, listOf(dispatch, middleware, reducer))
+
+        val targets = ReduxFlowPanel.buildDiagramNodeTargets(graph, MermaidNodeBuilder())
+
+        assertEquals(
+            setOf("action", "dispatch_0", "middleware_0", "reducer_0"),
+            targets.keys
+        )
+        assertEquals(
+            dispatch,
+            (targets.getValue("dispatch_0") as DiagramNodeTarget.UsageTarget).usage
+        )
+        assertEquals(
+            middleware,
+            (targets.getValue("middleware_0") as DiagramNodeTarget.UsageTarget).usage
+        )
+        assertEquals(
+            reducer,
+            (targets.getValue("reducer_0") as DiagramNodeTarget.UsageTarget).usage
+        )
+        assertEquals(
+            action,
+            (targets.getValue("action") as DiagramNodeTarget.ActionTarget).action
+        )
+    }
+
     fun testShowGraphCanExcludeTestsFromMermaidAndFlowSummary() {
         val panel = ReduxFlowPanel(project) {}
         val graph = ActionGraph(
@@ -128,12 +161,22 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         assertTrue(panel.mermaidText().contains("""dispatch_0["Dispatch.kt:4"]"""))
         assertFalse(panel.mermaidText().contains("DispatchTest.kt:5"))
         assertFalse(panel.mermaidText().contains("classDef testNode"))
+        assertEquals(setOf("action", "dispatch_0", "reducer_0"), panel.diagramNodeTargetsForTest().keys)
     }
 
-    fun testPanelStartsOnFlowTab() {
+    fun testPanelStartsOnDiagramTab() {
         val panel = ReduxFlowPanel(project) {}
 
-        assertEquals("Flow", panel.selectedTabTitle())
+        assertEquals("Diagram", panel.selectedTabTitle())
+    }
+
+    fun testPanelUsesDiagramMermaidFlowTabOrder() {
+        val panel = ReduxFlowPanel(project) {}
+
+        assertEquals(
+            listOf("Diagram", "Mermaid Source", "Flow"),
+            panel.tabTitlesForTest()
+        )
     }
 
     fun testHeaderUsesCompactLayoutWhenPanelIsNarrow() {
