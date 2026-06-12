@@ -2,11 +2,9 @@ package org.mozilla.reduxnav.nativeflow
 
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Dimension
-import java.awt.FontMetrics
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.RenderingHints
@@ -84,7 +82,7 @@ class FlowGraphPanel(
     }
 
     private fun drawNode(g: Graphics2D, node: RenderedNode) {
-        val colors = if (node.isTestNode) testNodeColors() else standardNodeColors()
+        val colors = FlowNodePalette.colorsFor(node.kind, node.isTestNode)
         val shape = RoundRectangle2D.Double(
             node.x,
             node.y,
@@ -160,25 +158,7 @@ class FlowGraphPanel(
         }
     }
 
-    private fun standardNodeColors(): NodeColors = NodeColors(
-        fill = UIUtil.getPanelBackground(),
-        border = JBColor.border(),
-        text = UIUtil.getLabelForeground()
-    )
-
-    private fun testNodeColors(): NodeColors = NodeColors(
-        fill = JBColor(Color(0xD7, 0xEA, 0xD7), Color(0x21, 0x4D, 0x29)),
-        border = JBColor(Color(0x33, 0x88, 0x33), Color(0x4A, 0xA3, 0x5F)),
-        text = JBColor(Color(0x1E, 0x2A, 0x1E), Color(0xF4, 0xFF, 0xF4))
-    )
-
     private fun arrowColor(): Color = JBColor.border()
-
-    private data class NodeColors(
-        val fill: Color,
-        val border: Color,
-        val text: Color
-    )
 
     companion object {
         private const val MIN_SCALE = 0.35

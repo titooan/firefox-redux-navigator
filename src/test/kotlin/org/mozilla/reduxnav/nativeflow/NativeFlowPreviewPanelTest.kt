@@ -11,4 +11,14 @@ class NativeFlowPreviewPanelTest {
 
         assertEquals(JViewport.SIMPLE_SCROLL_MODE, panel.viewportScrollMode())
     }
+
+    @Test
+    fun previewShowsLegendForNodeColors() {
+        val panel = NativeFlowPreviewPanel()
+
+        assertEquals(
+            listOf("Dispatch", "Dispatch (Test)", "Action", "Middleware", "Reducer"),
+            panel.legendLabelsForTest()
+        )
+    }
 }

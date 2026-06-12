@@ -6,6 +6,25 @@ data class FlowGraph(
     val testNodeIds: Set<String> = emptySet()
 )
 
+enum class FlowNodeKind(val displayName: String) {
+    DISPATCH("Dispatch"),
+    ACTION("Action"),
+    MIDDLEWARE("Middleware"),
+    REDUCER("Reducer"),
+    UNKNOWN("Node");
+
+    companion object {
+        fun fromNodeId(nodeId: String): FlowNodeKind =
+            when {
+                nodeId == "action" -> ACTION
+                nodeId.startsWith("dispatch_") -> DISPATCH
+                nodeId.startsWith("middleware_") -> MIDDLEWARE
+                nodeId.startsWith("reducer_") -> REDUCER
+                else -> UNKNOWN
+            }
+    }
+}
+
 data class FlowNode(
     val id: String,
     val label: String
@@ -31,6 +50,7 @@ data class RenderedGraph(
 data class RenderedNode(
     val id: String,
     val label: String,
+    val kind: FlowNodeKind,
     val x: Double,
     val y: Double,
     val width: Double,

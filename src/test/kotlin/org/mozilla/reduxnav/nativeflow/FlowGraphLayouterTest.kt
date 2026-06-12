@@ -4,6 +4,7 @@ import org.eclipse.elk.core.data.LayoutMetaDataService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.awt.Color
 
 class FlowGraphLayouterTest {
     private val layouter = FlowGraphLayouter()
@@ -40,6 +41,25 @@ class FlowGraphLayouterTest {
 
         assertTrue(rendered.width > 0.0)
         assertTrue(rendered.height > 0.0)
+    }
+
+    @Test
+    fun layoutAssignsNodeKindsFromCurrentMermaidIds() {
+        val rendered = layouter.layout(dispatchGraphWithTests())
+
+        assertEquals(FlowNodeKind.ACTION, rendered.nodes.single { it.id == "action" }.kind)
+        assertEquals(FlowNodeKind.DISPATCH, rendered.nodes.single { it.id == "dispatch_0" }.kind)
+        assertEquals(FlowNodeKind.MIDDLEWARE, rendered.nodes.single { it.id == "middleware_0" }.kind)
+        assertEquals(FlowNodeKind.REDUCER, rendered.nodes.single { it.id == "reducer_0" }.kind)
+    }
+
+    @Test
+    fun paletteUsesBlueForNonTestDispatchAndGreenForTestDispatch() {
+        val dispatchColors = FlowNodePalette.colorsFor(FlowNodeKind.DISPATCH, isTestNode = false)
+        val testDispatchColors = FlowNodePalette.colorsFor(FlowNodeKind.DISPATCH, isTestNode = true)
+
+        assertEquals(Color(0xDC, 0xEB, 0xFA), dispatchColors.fill)
+        assertEquals(Color(0xD7, 0xEA, 0xD7), testDispatchColors.fill)
     }
 
     @Test

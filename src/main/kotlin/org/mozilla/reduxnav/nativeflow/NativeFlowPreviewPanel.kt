@@ -5,8 +5,10 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.Dimension
 import java.awt.event.InputEvent
 import java.awt.event.MouseWheelEvent
+import javax.swing.BorderFactory
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JButton
@@ -47,7 +49,7 @@ class NativeFlowPreviewPanel(
     private fun showGraph(renderedGraph: RenderedGraph) {
         removeAll()
         graphPanel.setRenderedGraph(renderedGraph)
-        add(createToolbar(), BorderLayout.NORTH)
+        add(createHeader(), BorderLayout.NORTH)
         add(scrollPane, BorderLayout.CENTER)
         revalidate()
         repaint()
@@ -88,6 +90,14 @@ class NativeFlowPreviewPanel(
         repaint()
     }
 
+    private fun createHeader(): JComponent =
+        JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            add(createToolbar())
+            add(createLegend())
+        }
+
     private fun createToolbar(): JComponent =
         JPanel().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
@@ -104,6 +114,31 @@ class NativeFlowPreviewPanel(
                     addActionListener { graphPanel.fitTo(scrollPane.viewport.extentSize) }
                 }
             )
+        }
+
+    private fun createLegend(): JComponent =
+        JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            border = JBUI.Borders.empty(0, 8, 8, 8)
+            isOpaque = false
+
+            add(JBLabel("Legend:"))
+            FlowNodePalette.legendEntries().forEachIndexed { index, entry ->
+                add(Box.createHorizontalStrut(if (index == 0) 10 else 8))
+                add(createLegendSwatch(entry))
+                add(Box.createHorizontalStrut(4))
+                add(JBLabel(entry.label))
+            }
+        }
+
+    private fun createLegendSwatch(entry: LegendEntry): JComponent =
+        JPanel().apply {
+            preferredSize = Dimension(14, 14)
+            minimumSize = preferredSize
+            maximumSize = preferredSize
+            background = entry.colors.fill
+            border = BorderFactory.createLineBorder(entry.colors.border, 1)
+            toolTipText = entry.label
         }
 
     private fun installZoomSupport() {
@@ -123,4 +158,7 @@ class NativeFlowPreviewPanel(
         modifiersEx and (InputEvent.CTRL_DOWN_MASK or InputEvent.META_DOWN_MASK) != 0
 
     internal fun viewportScrollMode(): Int = scrollPane.viewport.scrollMode
+
+    internal fun legendLabelsForTest(): List<String> =
+        FlowNodePalette.legendEntries().map { it.label }
 }

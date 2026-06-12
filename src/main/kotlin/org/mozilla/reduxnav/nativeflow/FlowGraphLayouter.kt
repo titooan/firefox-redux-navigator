@@ -53,6 +53,7 @@ class FlowGraphLayouter {
             RenderedNode(
                 id = node.id,
                 label = node.label,
+                kind = FlowNodeKind.fromNodeId(node.id),
                 x = elkNode.x,
                 y = elkNode.y,
                 width = elkNode.width,
