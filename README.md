@@ -16,7 +16,7 @@ First iteration of an Android Studio / IntelliJ plugin to navigate Firefox Andro
 - Double-click a usage in the popup to navigate to it.
 - Opens a `Redux Flow` tool window from the editor context menu or popup to inspect dispatches, middlewares, and reducers in one vertical view.
 - Generates Mermaid flowchart source from the cached Redux action graph, with copy-to-clipboard support in the tool window.
-- Parses and renders a small Mermaid `flowchart LR` subset locally inside the tool window, without JCEF, Node, Chromium, or network access.
+- Renders a native interactive Redux graph locally inside the tool window using the in-repo Swing + ELK graph stack, without JCEF, Node, Chromium, or network access.
 
 ## Redux Flow tool window
 
@@ -25,7 +25,7 @@ Use `Show Redux Flow` from the editor context menu when the caret is on a Redux 
 The tool window shows three tabs:
 
 - `Flow`
-- `Diagram`
+- `Graph`
 - `Mermaid Source`
 
 The `Flow` tab contains:
@@ -38,7 +38,24 @@ The `Flow` tab contains:
 
 Each row is clickable and navigates to the source location.
 
-The `Diagram` tab renders the generated Mermaid subset locally using a native Swing renderer backed by ELK layout. The `Mermaid Source` tab remains available for inspection and copy/export workflows.
+### Phase 5: Native Graph Visualization
+
+The `Graph` tab is now the primary visualization experience.
+
+- Dispatch nodes show dispatch callsites.
+- The action node sits between dispatches and downstream handlers.
+- Middleware nodes show middleware handlers for the action.
+- Reducer nodes show reducer handlers for the action.
+- Single-click selects a node.
+- Double-click navigates to the underlying source declaration or usage.
+
+The graph view uses the repository's existing native renderer:
+
+- `FlowGraphLayouter` runs ELK layered layout.
+- `FlowGraphPanel` renders nodes and edges in Swing.
+- `ReduxGraphBuilder` builds a Redux-native graph model first, then adapts it into the renderer.
+
+The `Mermaid Source` tab remains available for inspection, copy/paste, documentation, RFCs, and debugging workflows.
 
 The toolbar includes:
 
@@ -105,18 +122,11 @@ action --> middleware_0
 middleware_0 --> reducer_0
 ```
 
-## Native Diagram Renderer
+## Mermaid Source
 
-- The plugin keeps Mermaid text as its diagram input contract, but only supports a deliberately small local subset.
-- Supported syntax:
-  - `flowchart LR`
-  - blank lines
-  - comments beginning with `%%`
-  - rectangular nodes like `node_id["Label"]`
-  - directed edges like `from --> to`
-  - the plugin's own optional `classDef testNode ...` and `class some_id testNode;` lines used to highlight test nodes
-- Unsupported Mermaid syntax is rejected with a readable line-numbered error in the `Diagram` tab.
+- Mermaid is still generated from the same `ActionGraph` used by the `Flow` and `Graph` tabs.
 - `Copy Mermaid` still copies the exact Mermaid source shown in the `Mermaid Source` tab.
+- Mermaid remains useful for documentation, bug reports, architecture discussions, and external sharing.
 
 ## Current heuristics
 
@@ -192,9 +202,10 @@ Known limitations:
 - No caching yet.
 - Middleware/reducer detection is name/supertype based.
 - Dispatch wrapper functions are not modeled yet.
+- No global Redux graph yet.
+- No middleware-chain visualization yet.
 - State-centric visualization is not implemented yet.
 - Mermaid export is not implemented yet.
-- The native diagram renderer intentionally does not support full Mermaid syntax.
 
 ## Suggested next iterations
 

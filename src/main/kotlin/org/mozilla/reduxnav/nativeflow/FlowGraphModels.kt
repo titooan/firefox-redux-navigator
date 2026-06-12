@@ -2,8 +2,7 @@ package org.mozilla.reduxnav.nativeflow
 
 data class FlowGraph(
     val nodes: List<FlowNode>,
-    val edges: List<FlowEdge>,
-    val testNodeIds: Set<String> = emptySet()
+    val edges: List<FlowEdge>
 )
 
 enum class FlowNodeKind(val displayName: String) {
@@ -27,7 +26,10 @@ enum class FlowNodeKind(val displayName: String) {
 
 data class FlowNode(
     val id: String,
-    val label: String
+    val label: String,
+    val kind: FlowNodeKind = FlowNodeKind.fromNodeId(id),
+    val isTestNode: Boolean = false,
+    val tooltipText: String? = null
 )
 
 data class FlowEdge(
@@ -55,7 +57,8 @@ data class RenderedNode(
     val y: Double,
     val width: Double,
     val height: Double,
-    val isTestNode: Boolean = false
+    val isTestNode: Boolean = false,
+    val tooltipText: String? = null
 )
 
 data class RenderedEdge(

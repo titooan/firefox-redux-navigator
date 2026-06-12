@@ -1,6 +1,7 @@
 package org.mozilla.reduxnav.nativeflow
 
 import com.intellij.ui.JBColor
+import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.JBUI
 import java.awt.BasicStroke
 import java.awt.Color
@@ -28,8 +29,10 @@ class FlowGraphPanel(
     renderedGraph: RenderedGraph? = null
 ) : JComponent() {
     private var renderedGraph: RenderedGraph? = renderedGraph
-    private var nodeTargets: Map<String, DiagramNodeTarget> = emptyMap()
-    private var onNodeClick: ((String) -> Unit)? = null
+    private var interactiveNodeIds: Set<String> = emptySet()
+    private var onNodeSelected: ((String) -> Unit)? = null
+    private var onNodeDoubleClick: ((String) -> Unit)? = null
+    private var selectedNodeId: String? = null
     private var scale = 1.0
 
     init {
@@ -42,18 +45,21 @@ class FlowGraphPanel(
 
     fun setRenderedGraph(graph: RenderedGraph?) {
         renderedGraph = graph
+        selectedNodeId = null
         scale = 1.0
         updatePreferredSize()
         updateCursorFor(null)
         repaint()
     }
 
-    fun setNodeTargets(
-        nodeTargets: Map<String, DiagramNodeTarget>,
-        onNodeClick: ((String) -> Unit)? = null
+    fun setInteractiveNodeIds(
+        nodeIds: Set<String>,
+        onNodeSelected: ((String) -> Unit)? = null,
+        onNodeDoubleClick: ((String) -> Unit)? = null
     ) {
-        this.nodeTargets = nodeTargets
-        this.onNodeClick = onNodeClick
+        interactiveNodeIds = nodeIds
+        this.onNodeSelected = onNodeSelected
+        this.onNodeDoubleClick = onNodeDoubleClick
         updateCursorFor(null)
         repaint()
     }
@@ -90,8 +96,7 @@ class FlowGraphPanel(
     override fun getToolTipText(event: MouseEvent): String? =
         event.point
             ?.let(::nodeAt)
-            ?.takeIf { it.id in nodeTargets }
-            ?.let { nodeTargets[it.id]?.tooltipText }
+            ?.tooltipText
 
     override fun paintComponent(graphics: Graphics) {
         super.paintComponent(graphics)
@@ -123,8 +128,8 @@ class FlowGraphPanel(
 
         g.color = colors.fill
         g.fill(shape)
-        g.color = colors.border
-        g.stroke = BasicStroke(JBUI.scale(1f))
+        g.color = if (node.id == selectedNodeId) UIUtil.getFocusedBorderColor() else colors.border
+        g.stroke = BasicStroke(JBUI.scale(if (node.id == selectedNodeId) 2f else 1f))
         g.draw(shape)
 
         g.color = colors.text
@@ -197,8 +202,12 @@ class FlowGraphPanel(
             override fun mouseClicked(event: MouseEvent) {
                 if (event.button != MouseEvent.BUTTON1) return
                 val nodeId = nodeAt(event.point)?.id ?: return
-                if (nodeId !in nodeTargets) return
-                onNodeClick?.invoke(nodeId)
+                selectedNodeId = nodeId
+                repaint()
+                onNodeSelected?.invoke(nodeId)
+                if (event.clickCount >= 2 && nodeId in interactiveNodeIds) {
+                    onNodeDoubleClick?.invoke(nodeId)
+                }
             }
         }
         addMouseMotionListener(listener)
@@ -206,7 +215,7 @@ class FlowGraphPanel(
     }
 
     private fun updateCursorFor(point: Point?) {
-        cursor = if (point != null && nodeAt(point)?.id in nodeTargets) {
+        cursor = if (point != null && nodeAt(point)?.id in interactiveNodeIds) {
             Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         } else {
             Cursor.getDefaultCursor()
@@ -242,6 +251,8 @@ class FlowGraphPanel(
         updateCursorFor(Point(x, y))
         return cursor.type
     }
+
+    internal fun selectedNodeIdForTest(): String? = selectedNodeId
 
     private fun createRoundedPath(points: List<Point2D>): Path2D.Double =
         Path2D.Double().apply {

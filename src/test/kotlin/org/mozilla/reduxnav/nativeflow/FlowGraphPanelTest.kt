@@ -4,8 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mozilla.reduxnav.model.ActionId
-import org.mozilla.reduxnav.model.ActionInfo
 import java.awt.Color
 import java.awt.Cursor
 
@@ -144,20 +142,72 @@ class FlowGraphPanelTest {
                 edges = emptyList()
             )
         )
-        panel.setNodeTargets(
-            mapOf(
-                "dispatch_0" to DiagramNodeTarget.ActionTarget(
-                    action = ActionInfo(
-                        id = ActionId("dispatch_0"),
-                        displayName = "DispatchAction",
-                        declaration = null
-                    )
-                )
-            )
-        )
+        panel.setInteractiveNodeIds(setOf("dispatch_0"))
 
         assertEquals(Cursor.HAND_CURSOR, panel.cursorTypeForTest(40, 20))
         assertEquals(Cursor.DEFAULT_CURSOR, panel.cursorTypeForTest(5, 5))
+    }
+
+    @Test
+    fun selectionTracksClickedNode() {
+        val panel = FlowGraphPanel(
+            RenderedGraph(
+                width = 300.0,
+                height = 120.0,
+                nodes = listOf(
+                    node("dispatch_0", FlowNodeKind.DISPATCH).copy(x = 20.0, y = 10.0)
+                ),
+                edges = emptyList()
+            )
+        )
+
+        panel.dispatchEvent(
+            java.awt.event.MouseEvent(
+                panel,
+                java.awt.event.MouseEvent.MOUSE_CLICKED,
+                System.currentTimeMillis(),
+                0,
+                40,
+                20,
+                1,
+                false,
+                java.awt.event.MouseEvent.BUTTON1
+            )
+        )
+
+        assertEquals("dispatch_0", panel.selectedNodeIdForTest())
+    }
+
+    @Test
+    fun selectionCallbackReceivesClickedNode() {
+        var selected: String? = null
+        val panel = FlowGraphPanel(
+            RenderedGraph(
+                width = 300.0,
+                height = 120.0,
+                nodes = listOf(
+                    node("dispatch_0", FlowNodeKind.DISPATCH).copy(x = 20.0, y = 10.0)
+                ),
+                edges = emptyList()
+            )
+        )
+        panel.setInteractiveNodeIds(setOf("dispatch_0"), onNodeSelected = { selected = it })
+
+        panel.dispatchEvent(
+            java.awt.event.MouseEvent(
+                panel,
+                java.awt.event.MouseEvent.MOUSE_CLICKED,
+                System.currentTimeMillis(),
+                0,
+                40,
+                20,
+                1,
+                false,
+                java.awt.event.MouseEvent.BUTTON1
+            )
+        )
+
+        assertEquals("dispatch_0", selected)
     }
 
     private fun node(id: String, kind: FlowNodeKind, isTestNode: Boolean = false): RenderedNode =

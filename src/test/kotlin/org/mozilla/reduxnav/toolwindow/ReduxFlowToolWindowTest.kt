@@ -1,9 +1,10 @@
 package org.mozilla.reduxnav.toolwindow
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.intellij.testFramework.PlatformTestUtil
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.mozilla.reduxnav.analysis.ActionSymbolResolver
-import org.mozilla.reduxnav.mermaid.MermaidNodeBuilder
+import org.mozilla.reduxnav.graph.ReduxGraphBuilder
 import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
@@ -97,19 +98,117 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
 
     fun testShowGraphUpdatesMermaidView() {
         val panel = ReduxFlowPanel(project) {}
-        val graph = ActionGraph(
-            actionInfo("AddTabAction"),
-            listOf(
-                usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH),
-                usage("Reducer.kt", "/work/Reducer.kt", 20, ReduxUsageKind.REDUCER)
+        try {
+            val graph = ActionGraph(
+                actionInfo("AddTabAction"),
+                listOf(
+                    usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH),
+                    usage("Reducer.kt", "/work/Reducer.kt", 20, ReduxUsageKind.REDUCER)
+                )
             )
-        )
 
-        panel.showGraph(graph)
+            panel.showGraph(graph)
 
-        assertTrue(panel.mermaidText().contains("flowchart LR"))
-        assertTrue(panel.mermaidText().contains("dispatch_0 --> action"))
-        assertTrue(panel.mermaidText().contains("action --> reducer_0"))
+            assertTrue(panel.mermaidText().contains("flowchart LR"))
+            assertTrue(panel.mermaidText().contains("dispatch_0 --> action"))
+            assertTrue(panel.mermaidText().contains("action --> reducer_0"))
+        } finally {
+            panel.dispose()
+        }
+    }
+
+    fun testShowGraphPopulatesCodePreviewPane() {
+        val panel = ReduxFlowPanel(project) {}
+        try {
+            val dispatch = usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH)
+            val graph = ActionGraph(
+                actionInfo("AddTabAction"),
+                listOf(
+                    dispatch,
+                    usage("Reducer.kt", "/work/Reducer.kt", 20, ReduxUsageKind.REDUCER)
+                )
+            )
+
+            panel.showGraph(graph)
+            panel.previewCurrentTargetForTest(DiagramNodeTarget.UsageTarget(dispatch))
+
+            assertTrue(panel.previewIsShowingEditorForTest())
+            assertEquals("Dispatch.kt", panel.codePreviewFileNameForTest())
+            assertTrue(panel.codePreviewFilePathForTest()?.contains("Dispatch.kt") == true)
+            assertTrue(panel.codePreviewSelectedTextForTest()?.contains("AddTabAction") == true)
+        } finally {
+            panel.dispose()
+        }
+    }
+
+    fun testShowGraphKeepsCodePreviewHiddenUntilNodeSelection() {
+        val panel = ReduxFlowPanel(project) {}
+        try {
+            val graph = ActionGraph(
+                actionInfo("AddTabAction"),
+                listOf(usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH))
+            )
+
+            panel.showGraph(graph)
+
+            assertFalse(panel.isCodePreviewVisibleForTest())
+            assertFalse(panel.previewIsShowingEditorForTest())
+        } finally {
+            panel.dispose()
+        }
+    }
+
+    fun testCodePreviewScrollsToSelectedNodeLineOnFirstOpen() {
+        val panel = ReduxFlowPanel(project) {}
+        try {
+            val file = myFixture.configureByText(
+                "DeepDispatch.kt",
+                buildString {
+                    appendLine("fun sample() {")
+                    repeat(60) { appendLine("    val value$it = $it") }
+                    appendLine("    AddTabAction")
+                    appendLine("}")
+                }
+            )
+            val offset = file.text.indexOf("AddTabAction")
+            val element = file.findElementAt(offset) ?: error("Expected PSI element")
+            val dispatch = ReduxUsage(
+                kind = ReduxUsageKind.DISPATCH,
+                displayText = "AddTabAction",
+                fileName = "DeepDispatch.kt",
+                filePath = "/work/DeepDispatch.kt",
+                line = 62,
+                element = element.toSmartPointer()
+            )
+            val graph = ActionGraph(
+                actionInfo("AddTabAction"),
+                listOf(dispatch)
+            )
+
+            panel.setSize(900, 700)
+            panel.doLayout()
+            panel.showGraph(graph)
+            panel.previewCurrentTargetForTest(DiagramNodeTarget.UsageTarget(dispatch))
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+
+            assertEquals(61, panel.codePreviewCurrentLineForTest())
+            assertTrue((panel.codePreviewVisibleStartLineForTest() ?: -1) > 0)
+        } finally {
+            panel.dispose()
+        }
+    }
+
+    fun testEmptyStateClearsCodePreviewPane() {
+        val panel = ReduxFlowPanel(project) {}
+
+        try {
+            panel.showEmptyState()
+
+            assertFalse(panel.isCodePreviewVisibleForTest())
+            assertTrue(panel.previewMessageForTest()?.contains("Select a Redux flow node") == true)
+        } finally {
+            panel.dispose()
+        }
     }
 
     fun testBuildDiagramNodeTargetsUsesStableMermaidIds() {
@@ -119,7 +218,7 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         val reducer = usage("Reducer.kt", "/work/Reducer.kt", 20, ReduxUsageKind.REDUCER)
         val graph = ActionGraph(action, listOf(dispatch, middleware, reducer))
 
-        val targets = ReduxFlowPanel.buildDiagramNodeTargets(graph, MermaidNodeBuilder())
+        val targets = ReduxFlowPanel.buildDiagramNodeTargets(ReduxGraphBuilder().build(graph))
 
         assertEquals(
             setOf("action", "dispatch_0", "middleware_0", "reducer_0"),
@@ -145,36 +244,40 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
 
     fun testShowGraphCanExcludeTestsFromMermaidAndFlowSummary() {
         val panel = ReduxFlowPanel(project) {}
-        val graph = ActionGraph(
-            actionInfo("AddTabAction"),
-            listOf(
-                usage("Dispatch.kt", "/work/src/main/kotlin/Dispatch.kt", 4, ReduxUsageKind.DISPATCH),
-                usage("DispatchTest.kt", "/work/src/test/kotlin/DispatchTest.kt", 5, ReduxUsageKind.DISPATCH),
-                usage("Reducer.kt", "/work/src/main/kotlin/Reducer.kt", 20, ReduxUsageKind.REDUCER)
+        try {
+            val graph = ActionGraph(
+                actionInfo("AddTabAction"),
+                listOf(
+                    usage("Dispatch.kt", "/work/src/main/kotlin/Dispatch.kt", 4, ReduxUsageKind.DISPATCH),
+                    usage("DispatchTest.kt", "/work/src/test/kotlin/DispatchTest.kt", 5, ReduxUsageKind.DISPATCH),
+                    usage("Reducer.kt", "/work/src/main/kotlin/Reducer.kt", 20, ReduxUsageKind.REDUCER)
+                )
             )
-        )
 
-        panel.showGraph(graph)
-        panel.setIncludeTestsForTest(false)
+            panel.showGraph(graph)
+            panel.setIncludeTestsForTest(false)
 
-        assertFalse(panel.includesTestsForTest())
-        assertTrue(panel.mermaidText().contains("""dispatch_0["Dispatch.kt:4"]"""))
-        assertFalse(panel.mermaidText().contains("DispatchTest.kt:5"))
-        assertFalse(panel.mermaidText().contains("classDef testNode"))
-        assertEquals(setOf("action", "dispatch_0", "reducer_0"), panel.diagramNodeTargetsForTest().keys)
+            assertFalse(panel.includesTestsForTest())
+            assertTrue(panel.mermaidText().contains("""dispatch_0["Dispatch.kt:4"]"""))
+            assertFalse(panel.mermaidText().contains("DispatchTest.kt:5"))
+            assertFalse(panel.mermaidText().contains("classDef testNode"))
+            assertEquals(setOf("action", "dispatch_0", "reducer_0"), panel.diagramNodeTargetsForTest().keys)
+        } finally {
+            panel.dispose()
+        }
     }
 
-    fun testPanelStartsOnDiagramTab() {
+    fun testPanelStartsOnGraphTab() {
         val panel = ReduxFlowPanel(project) {}
 
-        assertEquals("Diagram", panel.selectedTabTitle())
+        assertEquals("Graph", panel.selectedTabTitle())
     }
 
-    fun testPanelUsesDiagramMermaidFlowTabOrder() {
+    fun testPanelUsesFlowGraphMermaidTabOrder() {
         val panel = ReduxFlowPanel(project) {}
 
         assertEquals(
-            listOf("Diagram", "Mermaid Source", "Flow"),
+            listOf("Graph", "Mermaid Source", "Flow"),
             panel.tabTitlesForTest()
         )
     }

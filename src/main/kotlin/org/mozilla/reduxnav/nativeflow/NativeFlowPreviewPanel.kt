@@ -1,9 +1,12 @@
 package org.mozilla.reduxnav.nativeflow
 
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
+import org.mozilla.reduxnav.graph.ReduxGraph
+import org.mozilla.reduxnav.graph.ReduxGraphAdapter
 import org.mozilla.reduxnav.ui.withTransientFocusRing
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -19,8 +22,9 @@ import javax.swing.SwingUtilities
 import javax.swing.JViewport
 
 class NativeFlowPreviewPanel(
-    private val onNodeClick: ((DiagramNodeTarget) -> Unit)? = null,
-    private val parser: MermaidSubsetParser = MermaidSubsetParser(),
+    private val onNodeNavigate: ((DiagramNodeTarget) -> Unit)? = null,
+    private val onNodeSelected: ((DiagramNodeTarget) -> Unit)? = null,
+    private val adapter: ReduxGraphAdapter = ReduxGraphAdapter(),
     private val layouter: FlowGraphLayouter = FlowGraphLayouter()
 ) : JPanel(BorderLayout()) {
     private val graphPanel = FlowGraphPanel()
@@ -34,32 +38,39 @@ class NativeFlowPreviewPanel(
         showMessage("Select a Redux Action and choose \"Show Redux Flow\".")
     }
 
-    fun setMermaidSource(
-        source: String,
+    fun setReduxGraph(
+        graph: ReduxGraph?,
         nodeTargets: Map<String, DiagramNodeTarget> = emptyMap()
     ) {
         this.nodeTargets = nodeTargets
-        if (source.isBlank()) {
+        if (graph == null) {
             showMessage("Select a Redux Action and choose \"Show Redux Flow\".")
             return
         }
 
         try {
-            val parsedGraph = parser.parse(source)
-            val renderedGraph = layouter.layout(parsedGraph)
+            val renderedGraph = layouter.layout(adapter.adapt(graph))
             showGraph(renderedGraph)
         } catch (error: Exception) {
-            showError(error.message ?: "Could not render diagram.")
+            LOG.warn("Could not build Redux graph.", error)
+            showError(error.message ?: "Could not build Redux graph.")
         }
     }
 
     private fun showGraph(renderedGraph: RenderedGraph) {
         removeAll()
         graphPanel.setRenderedGraph(renderedGraph)
-        graphPanel.setNodeTargets(nodeTargets) { nodeId ->
-            val target = nodeTargets[nodeId] ?: return@setNodeTargets
-            onNodeClick?.invoke(target)
-        }
+        graphPanel.setInteractiveNodeIds(
+            nodeTargets.keys,
+            onNodeSelected = { nodeId ->
+                val target = nodeTargets[nodeId] ?: return@setInteractiveNodeIds
+                onNodeSelected?.invoke(target)
+            },
+            onNodeDoubleClick = { nodeId ->
+                val target = nodeTargets[nodeId] ?: return@setInteractiveNodeIds
+                onNodeNavigate?.invoke(target)
+            }
+        )
         add(createHeader(), BorderLayout.NORTH)
         add(scrollPane, BorderLayout.CENTER)
         revalidate()
@@ -73,7 +84,7 @@ class NativeFlowPreviewPanel(
         removeAll()
         nodeTargets = emptyMap()
         graphPanel.setRenderedGraph(null)
-        graphPanel.setNodeTargets(emptyMap())
+        graphPanel.setInteractiveNodeIds(emptySet())
         add(JBLabel("<html>${message.replace("\n", "<br/>")}</html>"), BorderLayout.NORTH)
         revalidate()
         repaint()
@@ -83,11 +94,11 @@ class NativeFlowPreviewPanel(
         removeAll()
         nodeTargets = emptyMap()
         graphPanel.setRenderedGraph(null)
-        graphPanel.setNodeTargets(emptyMap())
+        graphPanel.setInteractiveNodeIds(emptySet())
         add(
             JPanel(BorderLayout()).apply {
                 border = JBUI.Borders.empty(12)
-                add(JBLabel("Diagram could not be rendered."), BorderLayout.NORTH)
+                add(JBLabel("Could not build Redux graph."), BorderLayout.NORTH)
                 add(
                     JBScrollPane(
                         JBTextArea(message).apply {
@@ -104,6 +115,10 @@ class NativeFlowPreviewPanel(
         )
         revalidate()
         repaint()
+    }
+
+    fun showErrorMessage(message: String) {
+        showError(message)
     }
 
     private fun createHeader(): JComponent =
@@ -185,4 +200,8 @@ class NativeFlowPreviewPanel(
             .map { it.isFocusable to it.isFocusPainted }
 
     internal fun interactiveNodeIdsForTest(): Set<String> = nodeTargets.keys
+
+    companion object {
+        private val LOG = Logger.getInstance(NativeFlowPreviewPanel::class.java)
+    }
 }

@@ -53,12 +53,13 @@ class FlowGraphLayouter {
             RenderedNode(
                 id = node.id,
                 label = node.label,
-                kind = FlowNodeKind.fromNodeId(node.id),
+                kind = node.kind,
                 x = elkNode.x,
                 y = elkNode.y,
                 width = elkNode.width,
                 height = elkNode.height,
-                isTestNode = node.id in graph.testNodeIds
+                isTestNode = node.isTestNode,
+                tooltipText = node.tooltipText
             )
         }
 

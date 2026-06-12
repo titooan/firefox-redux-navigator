@@ -63,7 +63,7 @@ class MermaidSubsetParserTest {
             """.trimIndent()
         )
 
-        assertEquals(setOf("dispatch_0"), graph.testNodeIds)
+        assertEquals(setOf("dispatch_0"), graph.nodes.filter { it.isTestNode }.map { it.id }.toSet())
         assertEquals("DownloadUIStoreTest.kt:1430", graph.nodes.single { it.id == "dispatch_0" }.label)
     }
 

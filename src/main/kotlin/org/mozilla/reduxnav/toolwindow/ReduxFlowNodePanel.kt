@@ -12,6 +12,7 @@ import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.model.lineText
 import org.mozilla.reduxnav.model.safeLineNumber
+import org.mozilla.reduxnav.nativeflow.DiagramNodeTarget
 import org.mozilla.reduxnav.popup.ReduxActionPopup
 import org.mozilla.reduxnav.popup.isTestPath
 import java.awt.Component
@@ -41,7 +42,9 @@ private val FLOW_TEST_BACKGROUND = JBColor(
 
 class ReduxFlowNodePanel(
     private val project: Project,
-    private val section: ReduxFlowSection
+    private val section: ReduxFlowSection,
+    private val onTargetSelected: ((DiagramNodeTarget) -> Unit)? = null,
+    private val onTargetNavigate: ((DiagramNodeTarget) -> Unit)? = null
 ) : JPanel() {
     init {
         layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -95,7 +98,10 @@ class ReduxFlowNodePanel(
             codeHtml = rowData.codeHtml,
             rowBackground = null
         )
-        installNavigation(row) { ReduxFlowPanel.navigateToAction(project, action) }
+        installInteraction(
+            row,
+            DiagramNodeTarget.ActionTarget(action)
+        )
         return row
     }
 
@@ -108,7 +114,10 @@ class ReduxFlowNodePanel(
             codeHtml = presentation.codeHtml,
             rowBackground = if (isTestPath(usage.filePath)) FLOW_TEST_BACKGROUND else presentation.background
         )
-        installNavigation(row) { ReduxFlowPanel.navigateToUsage(project, usage) }
+        installInteraction(
+            row,
+            DiagramNodeTarget.UsageTarget(usage)
+        )
         return row
     }
 
@@ -162,11 +171,13 @@ class ReduxFlowNodePanel(
             )
         }
 
-    private fun installNavigation(component: JComponent, onClick: () -> Unit) {
+    private fun installInteraction(component: JComponent, target: DiagramNodeTarget) {
         val listener = object : MouseAdapter() {
             override fun mouseClicked(event: MouseEvent) {
-                if (event.button == MouseEvent.BUTTON1 && event.clickCount == 1) {
-                    onClick()
+                if (event.button != MouseEvent.BUTTON1) return
+                onTargetSelected?.invoke(target)
+                if (event.clickCount >= 2) {
+                    onTargetNavigate?.invoke(target)
                 }
             }
         }

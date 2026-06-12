@@ -86,7 +86,7 @@ class FlowGraphLayouterTest {
     private fun sampleGraph(): FlowGraph =
         FlowGraph(
             nodes = listOf(
-                FlowNode("dispatch_0", "DownloadsScreen.kt:128"),
+                FlowNode("dispatch_0", "DownloadsScreen.kt:128", isTestNode = true),
                 FlowNode("action", "UndoPendingDeletion"),
                 FlowNode("middleware_0", "DownloadDeleteMiddleware.kt:80"),
                 FlowNode("reducer_0", "DownloadUIStore.kt:109")
@@ -95,8 +95,7 @@ class FlowGraphLayouterTest {
                 FlowEdge("dispatch_0", "action"),
                 FlowEdge("action", "middleware_0"),
                 FlowEdge("middleware_0", "reducer_0")
-            ),
-            testNodeIds = setOf("dispatch_0")
+            )
         )
 
     private fun dispatchGraphWithTests(): FlowGraph =
@@ -105,10 +104,10 @@ class FlowGraphLayouterTest {
                 FlowNode("action", "RenameFileConfirmed"),
                 FlowNode("dispatch_0", "DownloadsScreen.kt:294"),
                 FlowNode("dispatch_1", "DownloadUIRenameMiddleware.kt:59"),
-                FlowNode("dispatch_2", "DownloadUIStoreTest.kt:1430"),
-                FlowNode("dispatch_3", "DownloadUIStoreTest.kt:1477"),
-                FlowNode("dispatch_4", "DownloadUIStoreTest.kt:1526"),
-                FlowNode("dispatch_5", "DownloadUIStoreTest.kt:1577"),
+                FlowNode("dispatch_2", "DownloadUIStoreTest.kt:1430", isTestNode = true),
+                FlowNode("dispatch_3", "DownloadUIStoreTest.kt:1477", isTestNode = true),
+                FlowNode("dispatch_4", "DownloadUIStoreTest.kt:1526", isTestNode = true),
+                FlowNode("dispatch_5", "DownloadUIStoreTest.kt:1577", isTestNode = true),
                 FlowNode("middleware_0", "DownloadUIRenameMiddleware.kt:46"),
                 FlowNode("reducer_0", "DownloadUIStore.kt:91")
             ),
@@ -121,7 +120,6 @@ class FlowGraphLayouterTest {
                 FlowEdge("dispatch_5", "action"),
                 FlowEdge("action", "middleware_0"),
                 FlowEdge("middleware_0", "reducer_0")
-            ),
-            testNodeIds = setOf("dispatch_2", "dispatch_3", "dispatch_4", "dispatch_5")
+            )
         )
 }

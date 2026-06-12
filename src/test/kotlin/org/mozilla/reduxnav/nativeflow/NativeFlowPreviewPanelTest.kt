@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.mozilla.reduxnav.model.ActionId
 import org.mozilla.reduxnav.model.ActionInfo
 import org.junit.Test
+import org.mozilla.reduxnav.graph.ActionNode
+import org.mozilla.reduxnav.graph.ReduxGraph
 import javax.swing.JViewport
 
 class NativeFlowPreviewPanelTest {
@@ -38,15 +40,8 @@ class NativeFlowPreviewPanelTest {
     fun previewTracksInteractiveNodesForRenderedGraph() {
         val panel = NativeFlowPreviewPanel()
 
-        panel.setMermaidSource(
-            """
-            flowchart LR
-
-            action["AddTabAction"]
-            dispatch_0["Dispatch.kt:4"]
-
-            dispatch_0 --> action
-            """.trimIndent(),
+        panel.setReduxGraph(
+            ReduxGraph(nodes = listOf(ActionNode(ActionInfo(ActionId("AddTabAction"), "AddTabAction", null))), edges = emptyList()),
             mapOf(
                 "action" to DiagramNodeTarget.ActionTarget(
                     ActionInfo(ActionId("AddTabAction"), "AddTabAction", null)
@@ -61,22 +56,15 @@ class NativeFlowPreviewPanelTest {
     fun previewClearsInteractiveNodesOnRenderError() {
         val panel = NativeFlowPreviewPanel()
 
-        panel.setMermaidSource(
-            """
-            flowchart LR
-
-            action["AddTabAction"]
-            dispatch_0["Dispatch.kt:4"]
-
-            dispatch_0 --> action
-            """.trimIndent(),
+        panel.setReduxGraph(
+            ReduxGraph(nodes = listOf(ActionNode(ActionInfo(ActionId("AddTabAction"), "AddTabAction", null))), edges = emptyList()),
             mapOf(
                 "action" to DiagramNodeTarget.ActionTarget(
                     ActionInfo(ActionId("AddTabAction"), "AddTabAction", null)
                 )
             )
         )
-        panel.setMermaidSource("flowchart TD", mapOf("action" to DiagramNodeTarget.ActionTarget(ActionInfo(ActionId("Broken"), "Broken", null))))
+        panel.setReduxGraph(null)
 
         assertEquals(emptySet<String>(), panel.interactiveNodeIdsForTest())
     }

@@ -2,11 +2,13 @@ package org.mozilla.reduxnav.toolwindow
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ReadAction
+import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -18,9 +20,9 @@ import com.intellij.util.ui.JBEmptyBorder
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.StartupUiUtil
+import org.mozilla.reduxnav.graph.ReduxGraphBuilder
 import org.mozilla.reduxnav.mermaid.MermaidFlowRenderer
 import org.mozilla.reduxnav.mermaid.MermaidFlowStyle
-import org.mozilla.reduxnav.mermaid.MermaidNodeBuilder
 import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
@@ -47,12 +49,15 @@ class ReduxFlowPanel(
     private val project: Project,
     private val onRefresh: () -> Unit
 ) : JPanel(BorderLayout()), Disposable {
-    private val mermaidNodeBuilder = MermaidNodeBuilder()
+    private val reduxGraphBuilder = ReduxGraphBuilder()
     private val mermaidRenderer = MermaidFlowRenderer(
-        nodeBuilder = mermaidNodeBuilder,
         style = if (StartupUiUtil.isUnderDarcula) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
     )
-    private val mermaidPreviewPanel = NativeFlowPreviewPanel(::navigateFromDiagramNode)
+    private val graphPreviewPanel = NativeFlowPreviewPanel(
+        onNodeNavigate = ::navigateFromDiagramNode,
+        onNodeSelected = ::previewDiagramNode
+    )
+    private val codePreviewPanel = ReduxCodePreviewPanel(project)
     private val headerTitle = JBLabel("Redux Flow").apply {
         font = JBFont.h3().asBold()
     }
@@ -78,21 +83,27 @@ class ReduxFlowPanel(
     }
     private val tabs = JBTabbedPane().apply {
         border = JBUI.Borders.empty()
-        addTab("Diagram", mermaidPreviewPanel)
+        addTab("Graph", graphPreviewPanel)
         addTab("Mermaid Source", JBScrollPane(mermaidTextArea))
         addTab("Flow", JBScrollPane(contentPanel))
+        selectedIndex = GRAPH_TAB_INDEX
+    }
+    private val mainSplitter = OnePixelSplitter(true, 0.68f).apply {
+        firstComponent = tabs
+        secondComponent = codePreviewPanel
     }
 
     private var currentAction: ActionInfo? = null
     private var currentGraph: ActionGraph? = null
     private var currentMermaid: String = ""
     private var currentDiagramTargets: Map<String, DiagramNodeTarget> = emptyMap()
+    private var currentPreviewTarget: DiagramNodeTarget? = null
 
     init {
         border = JBUI.Borders.empty()
         includeTestsModel.addActionListener { rerenderCurrentGraph() }
         add(headerPanel, BorderLayout.NORTH)
-        add(tabs, BorderLayout.CENTER)
+        add(mainSplitter, BorderLayout.CENTER)
         showEmptyState()
     }
 
@@ -101,11 +112,13 @@ class ReduxFlowPanel(
         currentGraph = null
         currentMermaid = ""
         currentDiagramTargets = emptyMap()
+        currentPreviewTarget = null
         headerTitle.text = "Redux Flow"
         renderMessage("Select a Redux Action and choose \"Show Redux Flow\".")
-        renderMermaid("")
+        renderGraph(null)
+        resetCodePreview()
         setButtonsEnabled(false)
-        tabs.selectedIndex = DIAGRAM_TAB_INDEX
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -114,11 +127,13 @@ class ReduxFlowPanel(
         currentGraph = null
         currentMermaid = ""
         currentDiagramTargets = emptyMap()
+        currentPreviewTarget = null
         headerTitle.text = "Redux Flow: ${action.displayName}"
         renderMessage("The selected Redux Action is no longer valid. Re-run Show Redux Flow.")
-        renderMermaid("")
+        renderGraph(null)
+        resetCodePreview()
         setButtonsEnabled(false)
-        tabs.selectedIndex = DIAGRAM_TAB_INDEX
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -127,25 +142,38 @@ class ReduxFlowPanel(
         currentGraph = null
         currentMermaid = ""
         currentDiagramTargets = emptyMap()
+        currentPreviewTarget = null
         headerTitle.text = "Redux Flow: ${action.displayName}"
         renderMessage("Could not build Redux flow for this action.")
-        renderMermaid("")
+        graphPreviewPanel.showErrorMessage("Could not build Redux graph.")
+        resetCodePreview()
         setButtonsEnabled(false)
-        tabs.selectedIndex = DIAGRAM_TAB_INDEX
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
     }
 
     fun showGraph(graph: ActionGraph) {
         currentGraph = graph
         currentAction = graph.action
+        currentPreviewTarget = null
         renderCurrentGraph(graph)
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
     }
 
     internal fun renderCurrentGraph(graph: ActionGraph) {
         val visibleGraph = filteredGraph(graph)
-        currentDiagramTargets = buildDiagramNodeTargets(visibleGraph, mermaidNodeBuilder)
-        currentMermaid = mermaidRenderer.render(visibleGraph)
+        try {
+            val reduxGraph = reduxGraphBuilder.build(visibleGraph)
+            currentDiagramTargets = buildDiagramNodeTargets(reduxGraph)
+            currentMermaid = mermaidRenderer.render(visibleGraph)
+            renderGraph(reduxGraph, currentDiagramTargets)
+        } catch (error: Exception) {
+            LOG.warn("Could not build Redux graph", error)
+            currentDiagramTargets = emptyMap()
+            currentMermaid = mermaidRenderer.render(visibleGraph)
+            graphPreviewPanel.showErrorMessage("Could not build Redux graph.")
+        }
         headerTitle.text = "Redux Flow: ${graph.action.displayName}"
         contentPanel.removeAll()
         contentPanel.add(summaryLabel(visibleGraph))
@@ -153,14 +181,23 @@ class ReduxFlowPanel(
 
         val sections = buildSections(visibleGraph)
         sections.forEachIndexed { index, section ->
-            contentPanel.add(ReduxFlowNodePanel(project, section))
+            contentPanel.add(
+                ReduxFlowNodePanel(
+                    project,
+                    section,
+                    onTargetSelected = ::previewDiagramNode,
+                    onTargetNavigate = ::navigateFromDiagramNode
+                )
+            )
             if (index < sections.lastIndex) {
                 contentPanel.add(arrowLabel())
             }
         }
 
-        renderMermaid(currentMermaid, currentDiagramTargets)
+        hideCodePreview()
+        renderMermaid(currentMermaid)
         setButtonsEnabled(true)
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         revalidate()
         repaint()
     }
@@ -221,13 +258,16 @@ class ReduxFlowPanel(
             .notify(project)
     }
 
-    private fun renderMermaid(
-        mermaid: String,
+    private fun renderGraph(
+        graph: org.mozilla.reduxnav.graph.ReduxGraph?,
         diagramTargets: Map<String, DiagramNodeTarget> = emptyMap()
     ) {
+        graphPreviewPanel.setReduxGraph(graph, diagramTargets)
+    }
+
+    private fun renderMermaid(mermaid: String) {
         mermaidTextArea.text = mermaid
         mermaidTextArea.caretPosition = 0
-        mermaidPreviewPanel.setMermaidSource(mermaid, diagramTargets)
     }
 
     private fun setButtonsEnabled(enabled: Boolean) {
@@ -244,6 +284,11 @@ class ReduxFlowPanel(
             is DiagramNodeTarget.ActionTarget -> navigateToAction(project, target.action)
             is DiagramNodeTarget.UsageTarget -> navigateToUsage(project, target.usage)
         }
+    }
+
+    private fun previewDiagramNode(target: DiagramNodeTarget) {
+        currentPreviewTarget = target
+        showCodePreview(target)
     }
 
     private fun filteredGraph(graph: ActionGraph): ActionGraph =
@@ -286,18 +331,64 @@ class ReduxFlowPanel(
     internal fun controlButtonFocusStatesForTest(): List<Pair<Boolean, Boolean>> =
         controlsButtons().map { it.isFocusable to it.isFocusPainted }
 
+    internal fun previewMessageForTest(): String? = codePreviewPanel.currentMessageForTest()
+
+    internal fun previewIsShowingEditorForTest(): Boolean = codePreviewPanel.isShowingEditorForTest()
+
+    internal fun previewCurrentTargetForTest(target: DiagramNodeTarget?) {
+        currentPreviewTarget = target
+        if (target == null) {
+            hideCodePreview()
+        } else {
+            showCodePreview(target)
+        }
+    }
+
+    internal fun codePreviewFileNameForTest(): String? = codePreviewPanel.currentFileNameForTest()
+
+    internal fun codePreviewFilePathForTest(): String? = codePreviewPanel.currentFilePathForTest()
+
+    internal fun codePreviewSelectedTextForTest(): String? = codePreviewPanel.selectedTextForTest()
+
+    internal fun codePreviewCurrentLineForTest(): Int? = codePreviewPanel.currentPreviewLineForTest()
+
+    internal fun codePreviewVisibleStartLineForTest(): Int? = codePreviewPanel.visibleStartLineForTest()
+
+    internal fun isCodePreviewVisibleForTest(): Boolean = codePreviewPanel.isVisible
+
     internal fun stackedControlsPreferredHeightForTest(width: Int): Int {
         stackedControls.setSize(width, Int.MAX_VALUE)
         return stackedControls.preferredSize.height
     }
 
     override fun dispose() {
+        codePreviewPanel.dispose()
     }
 
     private fun controlsButtons(): List<JButton> =
         listOf(inlineControls, stackedControls)
             .flatMap { panel -> panel.components.toList() }
             .filterIsInstance<JButton>()
+
+    private fun resetCodePreview() {
+        renderMermaid("")
+        hideCodePreview()
+    }
+
+    private fun hideCodePreview() {
+        currentPreviewTarget = null
+        codePreviewPanel.showTarget(null)
+        codePreviewPanel.isVisible = false
+        mainSplitter.revalidate()
+        mainSplitter.repaint()
+    }
+
+    private fun showCodePreview(target: DiagramNodeTarget) {
+        codePreviewPanel.isVisible = true
+        codePreviewPanel.showTarget(target)
+        mainSplitter.revalidate()
+        mainSplitter.repaint()
+    }
 
     private fun summaryLabel(graph: ActionGraph): JComponent {
         val dispatches = graph.usages.count { it.kind == ReduxUsageKind.DISPATCH }
@@ -316,7 +407,8 @@ class ReduxFlowPanel(
         }
 
     companion object {
-        private const val DIAGRAM_TAB_INDEX = 0
+        private val LOG = Logger.getInstance(ReduxFlowPanel::class.java)
+        private const val GRAPH_TAB_INDEX = 0
         private const val NOTIFICATION_GROUP_ID = "Redux Navigator"
         private const val HEADER_GAP = 16
         private val sectionOrder = listOf(
@@ -327,15 +419,15 @@ class ReduxFlowPanel(
         )
 
         internal fun buildDiagramNodeTargets(
-            graph: ActionGraph,
-            nodeBuilder: MermaidNodeBuilder = MermaidNodeBuilder()
+            graph: org.mozilla.reduxnav.graph.ReduxGraph
         ): Map<String, DiagramNodeTarget> {
-            val mermaidGraph = nodeBuilder.build(graph)
             return buildMap {
-                put("action", DiagramNodeTarget.ActionTarget(graph.action))
-                mermaidGraph.dispatches.forEach { put(it.id, DiagramNodeTarget.UsageTarget(it.usage)) }
-                mermaidGraph.middlewares.forEach { put(it.id, DiagramNodeTarget.UsageTarget(it.usage)) }
-                mermaidGraph.reducers.forEach { put(it.id, DiagramNodeTarget.UsageTarget(it.usage)) }
+                graph.nodes.forEach { node ->
+                    when (val target = node.navigationTarget) {
+                        is org.mozilla.reduxnav.graph.ReduxGraphNavigationTarget.ActionTarget -> put(node.id, DiagramNodeTarget.ActionTarget(target.action))
+                        is org.mozilla.reduxnav.graph.ReduxGraphNavigationTarget.UsageTarget -> put(node.id, DiagramNodeTarget.UsageTarget(target.usage))
+                    }
+                }
             }
         }
 

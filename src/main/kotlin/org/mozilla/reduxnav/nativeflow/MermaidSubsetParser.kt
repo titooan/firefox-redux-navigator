@@ -111,9 +111,14 @@ class MermaidSubsetParser {
         }
 
         return FlowGraph(
-            nodes = nodesById.values.toList(),
-            edges = edges.map { it.edge },
-            testNodeIds = testNodeIds
+            nodes = nodesById.values.map { node ->
+                if (node.id in testNodeIds) {
+                    node.copy(isTestNode = true)
+                } else {
+                    node
+                }
+            },
+            edges = edges.map { it.edge }
         )
     }
 
