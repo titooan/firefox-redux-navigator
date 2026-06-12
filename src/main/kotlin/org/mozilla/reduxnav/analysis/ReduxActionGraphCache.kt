@@ -1,6 +1,7 @@
 package org.mozilla.reduxnav.analysis
 
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.psi.util.PsiModificationTracker
 import org.mozilla.reduxnav.model.ActionGraph
@@ -30,5 +31,9 @@ class ReduxActionGraphCache(private val project: Project) {
         val graph = ReduxUsageFinder(project).buildGraph(action)
         graphs[action.id.value] = CacheEntry(modificationCount, graph)
         return graph
+    }
+
+    companion object {
+        fun getInstance(project: Project): ReduxActionGraphCache = project.service()
     }
 }

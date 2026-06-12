@@ -21,6 +21,7 @@ import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
+import org.mozilla.reduxnav.toolwindow.ReduxFlowToolWindowService
 import java.awt.Color
 import java.awt.Component
 import java.awt.Dimension
@@ -34,6 +35,7 @@ import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.DefaultListModel
 import javax.swing.Icon
+import javax.swing.JButton
 import javax.swing.JCheckBox
 import javax.swing.JComponent
 import javax.swing.JComboBox
@@ -65,7 +67,7 @@ object ReduxActionPopup {
         )
         val list = createList(loadingEntries())
         val controller = PopupListController(list)
-        val content = createPopupContent(controller)
+        val content = createPopupContent(project, action, controller)
 
         val popup = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(content, list)
@@ -165,8 +167,8 @@ object ReduxActionPopup {
 
     internal fun createContent(list: JBList<PopupEntry>) = JBScrollPane(list)
 
-    internal fun createPopupContent(controller: PopupListController): JComponent {
-        val toolbar = createToolbar(controller)
+    internal fun createPopupContent(project: Project, action: ActionInfo, controller: PopupListController): JComponent {
+        val toolbar = createToolbar(project, action, controller)
         val toolbarHeight = toolbar.preferredSize.height
         toolbar.maximumSize = Dimension(Int.MAX_VALUE, toolbarHeight)
         toolbar.minimumSize = Dimension(0, toolbarHeight)
@@ -259,10 +261,15 @@ object ReduxActionPopup {
         return !SwingUtilities.isDescendingFrom(source, popupContent)
     }
 
-    private fun createToolbar(controller: PopupListController): JComponent {
+    private fun createToolbar(project: Project, action: ActionInfo, controller: PopupListController): JComponent {
         val panel = JPanel(GridBagLayout()).apply {
             border = JBUI.Borders.empty(6, 8, 4, 8)
         }
+
+        val openFlowButton = JButton("Open Redux Flow").apply {
+            addActionListener { ReduxFlowToolWindowService.getInstance(project).showFlow(action) }
+        }
+        panel.add(openFlowButton, constraints(0, 0.0, GridBagConstraints.WEST))
 
         val scopeSelector = JComboBox(UsageFileScope.entries.toTypedArray()).apply {
             selectedItem = controller.filterState.fileScope
@@ -271,7 +278,7 @@ object ReduxActionPopup {
                 controller.updateScope(scope)
             }
         }
-        panel.add(scopeSelector, constraints(0, 0.0, GridBagConstraints.WEST))
+        panel.add(scopeSelector, constraints(1, 0.0, GridBagConstraints.WEST))
 
         orderedUsageKinds().forEachIndexed { index, kind ->
             val checkbox = JCheckBox(kind.title, kind in controller.filterState.visibleKinds).apply {
@@ -279,10 +286,10 @@ object ReduxActionPopup {
                 border = JBUI.Borders.emptyLeft(8)
                 addActionListener { controller.setKindVisible(kind, isSelected) }
             }
-            panel.add(checkbox, constraints(index + 1, 0.0, GridBagConstraints.WEST))
+            panel.add(checkbox, constraints(index + 2, 0.0, GridBagConstraints.WEST))
         }
 
-        panel.add(JPanel().apply { isOpaque = false }, constraints(orderedUsageKinds().size + 1, 1.0, GridBagConstraints.WEST))
+        panel.add(JPanel().apply { isOpaque = false }, constraints(orderedUsageKinds().size + 2, 1.0, GridBagConstraints.WEST))
         return panel
     }
 

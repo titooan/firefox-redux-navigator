@@ -14,6 +14,105 @@ First iteration of an Android Studio / IntelliJ plugin to navigate Firefox Andro
   - Other references
 - Opens a grouped popup when clicking the gutter icon.
 - Double-click a usage in the popup to navigate to it.
+- Opens a `Redux Flow` tool window from the editor context menu or popup to inspect dispatches, middlewares, and reducers in one vertical view.
+- Generates Mermaid flowchart source from the cached Redux action graph, with copy-to-clipboard support in the tool window.
+- Renders Mermaid diagrams inside the tool window when JCEF is available, with Mermaid Source as a fallback-friendly companion view.
+
+## Redux Flow tool window
+
+Use `Show Redux Flow` from the editor context menu when the caret is on a Redux action usage or declaration.
+
+The tool window shows three tabs:
+
+- `Flow`
+- `Diagram`
+- `Mermaid Source`
+
+The `Flow` tab contains:
+
+- Dispatches
+- Action declaration
+- Middlewares
+- Reducers
+- Other references when present
+
+Each row is clickable and navigates to the source location.
+
+The `Diagram` tab renders the Mermaid flowchart visually when the IDE runtime supports JCEF. If JCEF is unavailable, the plugin shows a fallback message and the `Mermaid Source` tab remains available.
+
+The toolbar includes:
+
+- `Refresh`
+- `Copy Mermaid`
+
+### Manual validation
+
+Paste a small sample like this into the sandbox project or a Kotlin scratch file in Android Studio:
+
+```kotlin
+sealed interface BrowserAction
+
+data class AddTabAction(val url: String) : BrowserAction
+
+interface Store {
+    fun dispatch(action: BrowserAction)
+}
+
+interface Middleware
+
+class Toolbar {
+    fun onClick(store: Store) {
+        store.dispatch(AddTabAction("https://mozilla.org"))
+    }
+}
+
+class TabsMiddleware : Middleware {
+    fun handle(action: BrowserAction) {
+        when (action) {
+            is AddTabAction -> println(action.url)
+        }
+    }
+}
+
+data class BrowserState(val count: Int = 0)
+
+fun reduce(state: BrowserState, action: BrowserAction): BrowserState =
+    when (action) {
+        is AddTabAction -> state.copy(count = state.count + 1)
+        else -> state
+    }
+```
+
+Expected `Redux Flow` sections:
+
+- `Dispatches (1)`
+- `Action`
+- `Middlewares (1)`
+- `Reducers (1)`
+
+Expected Mermaid output shape:
+
+```text
+flowchart LR
+
+dispatch_0["Toolbar.kt:11"]
+action["AddTabAction"]
+middleware_0["TabsMiddleware.kt:17"]
+reducer_0["BrowserStateReducer.kt:25"]
+
+dispatch_0 --> action
+action --> middleware_0
+middleware_0 --> reducer_0
+```
+
+## Phase 5: Rendered Mermaid Preview
+
+- Mermaid JavaScript is bundled locally at `src/main/resources/mermaid/mermaid.min.js`.
+- The bundled Mermaid version is `11.15.0`, sourced from the npm `mermaid` package and loaded offline.
+- The `Diagram` tab uses `JBCefBrowser` when `JBCefApp.isSupported()` is true.
+- If JCEF is unavailable, the plugin does not crash and shows a fallback message directing you to `Mermaid Source`.
+- `Copy Mermaid` always copies the exact Mermaid source used for both the source tab and rendered preview.
+- Android Studio needs a JetBrains Runtime build with JCEF support for the `Diagram` tab to render.
 
 ## Current heuristics
 
@@ -91,6 +190,7 @@ Known limitations:
 - Dispatch wrapper functions are not modeled yet.
 - State-centric visualization is not implemented yet.
 - Mermaid export is not implemented yet.
+- Mermaid rendering depends on JCEF support in the running IDE.
 
 ## Suggested next iterations
 
