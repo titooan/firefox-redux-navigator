@@ -441,6 +441,7 @@ class ReduxFlowPanel(
     }
 
     private fun createDiagramNodeContextMenu(target: DiagramNodeTarget): JPopupMenu? {
+        if (currentStateGraph == null) return null
         val action = (target as? DiagramNodeTarget.ActionTarget)?.action ?: return null
         val group = DefaultActionGroup().apply {
             add(

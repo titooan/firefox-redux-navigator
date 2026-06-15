@@ -26,7 +26,10 @@ data class StateFieldInfo(
             if (fieldPath.startsWith("${target.fieldPath}.")) return true
             return fieldName == target.fieldName
         }
-        return fieldName == target.fieldName
+        if (!target.hasResolvedStateClass()) {
+            return fieldName == target.fieldName
+        }
+        return false
     }
 
     private fun sameResolvedStateClass(other: StateFieldInfo): Boolean =
@@ -34,6 +37,9 @@ data class StateFieldInfo(
 
     private fun sameStateClassName(other: StateFieldInfo): Boolean =
         stateClassName != null && stateClassName == other.stateClassName
+
+    private fun hasResolvedStateClass(): Boolean =
+        stateClassQualifiedName != null || stateClassName != null
 }
 
 data class StateModification(

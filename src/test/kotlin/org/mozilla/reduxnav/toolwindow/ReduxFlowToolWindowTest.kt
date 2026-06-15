@@ -383,6 +383,22 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         }
     }
 
+    fun testActionGraphActionNodesDoNotExposeReduxFlowContextMenu() {
+        val panel = ReduxFlowPanel(project) {}
+        try {
+            panel.showGraph(
+                ActionGraph(
+                    actionInfo("AddTabAction"),
+                    listOf(usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH))
+                )
+            )
+
+            assertEquals(emptyList<String>(), panel.graphContextMenuLabelsForTest("action"))
+        } finally {
+            panel.dispose()
+        }
+    }
+
     fun testHeaderUsesCompactLayoutWhenPanelIsNarrow() {
         val panel = ReduxFlowPanel(project) {}
 

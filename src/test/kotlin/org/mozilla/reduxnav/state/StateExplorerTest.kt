@@ -539,6 +539,54 @@ class StateExplorerTest : BasePlatformTestCase() {
         assertEquals(1, secondGraph.modifications.size)
     }
 
+    fun testFinderDoesNotLeakSameNamedFieldsAcrossDifferentStateClasses() {
+        myFixture.configureByText(
+            "DownloadReducer.kt",
+            """
+            sealed interface DownloadAction
+            data object ReplaceDownloads : DownloadAction
+
+            data class DownloadUIState(
+                val items: List<String>,
+            )
+
+            fun reduceDownloads(state: DownloadUIState, action: DownloadAction): DownloadUIState =
+                when (action) {
+                    ReplaceDownloads -> state.copy(items = listOf("download"))
+                }
+            """.trimIndent()
+        )
+        myFixture.addFileToProject(
+            "HistoryReducer.kt",
+            """
+            sealed interface HistoryAction
+            data object ReplaceHistory : HistoryAction
+
+            data class HistoryMetadataGroupFragmentState(
+                val items: List<String>,
+            )
+
+            fun reduceHistory(
+                state: HistoryMetadataGroupFragmentState,
+                action: HistoryAction,
+            ): HistoryMetadataGroupFragmentState =
+                when (action) {
+                    ReplaceHistory -> state.copy(items = listOf("history"))
+                }
+            """.trimIndent()
+        )
+
+        val field = resolveFieldByName("items")
+        val graph = StateModificationFinder(project).findModifications(field)
+        val modification = graph.modifications.single()
+
+        assertEquals(1, graph.modifications.size)
+        assertEquals("DownloadUIState.items", modification.stateField.qualifiedPath)
+        assertEquals("DownloadReducer.kt", modification.fileName)
+        assertTrue(modification.snippet.contains("download"))
+        assertFalse(modification.snippet.contains("history"))
+    }
+
     private fun resolveFieldByName(name: String): StateFieldInfo {
         val parameter = PsiTreeUtil.findChildrenOfType(myFixture.file, KtParameter::class.java)
             .single { it.name == name }
