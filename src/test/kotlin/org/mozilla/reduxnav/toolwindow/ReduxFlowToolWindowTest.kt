@@ -286,7 +286,7 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         val panel = ReduxFlowPanel(project) {}
 
         assertEquals(
-            listOf("Graph", "Mermaid Source", "Flow", "State"),
+            listOf("Graph", "Mermaid Source", "Flow"),
             panel.tabTitlesForTest()
         )
     }
@@ -344,7 +344,7 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
                 )
             )
 
-            assertEquals(listOf("Graph", "Mermaid Source", "Flow", "State"), panel.tabTitlesForTest())
+            assertEquals(listOf("Graph", "Mermaid Source", "Flow"), panel.tabTitlesForTest())
             assertEquals("Graph", panel.selectedTabTitle())
         } finally {
             panel.dispose()

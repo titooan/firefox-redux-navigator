@@ -150,6 +150,7 @@ class ReduxFlowPanel(
         renderActionGraph(null)
         resetCodePreview()
         ensureFlowTabVisible(true)
+        ensureStateTabVisible(false)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -167,6 +168,7 @@ class ReduxFlowPanel(
         renderActionGraph(null)
         resetCodePreview()
         ensureFlowTabVisible(true)
+        ensureStateTabVisible(false)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -184,6 +186,7 @@ class ReduxFlowPanel(
         graphPreviewPanel.showErrorMessage("Could not build Redux graph.")
         resetCodePreview()
         ensureFlowTabVisible(true)
+        ensureStateTabVisible(false)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -195,6 +198,7 @@ class ReduxFlowPanel(
         currentAction = graph.action
         currentPreviewTarget = null
         ensureFlowTabVisible(true)
+        ensureStateTabVisible(false)
         renderCurrentGraph(graph)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -212,6 +216,7 @@ class ReduxFlowPanel(
         renderMermaid("")
         hideCodePreview()
         ensureFlowTabVisible(false)
+        ensureStateTabVisible(true)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -229,6 +234,7 @@ class ReduxFlowPanel(
         renderMermaid("")
         hideCodePreview()
         ensureFlowTabVisible(false)
+        ensureStateTabVisible(true)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -246,6 +252,7 @@ class ReduxFlowPanel(
         renderMermaid("")
         hideCodePreview()
         ensureFlowTabVisible(false)
+        ensureStateTabVisible(true)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -261,6 +268,7 @@ class ReduxFlowPanel(
         stateExplorerPanel.showStateGraph(graph)
         hideCodePreview()
         ensureFlowTabVisible(false)
+        ensureStateTabVisible(true)
         setButtonsEnabled(currentMermaid.isNotBlank())
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -572,6 +580,17 @@ class ReduxFlowPanel(
         if (visible) {
             if (currentIndex == -1) {
                 tabs.insertTab("Flow", null, flowTabComponent, null, FLOW_TAB_INDEX)
+            }
+        } else if (currentIndex != -1) {
+            tabs.removeTabAt(currentIndex)
+        }
+    }
+
+    private fun ensureStateTabVisible(visible: Boolean) {
+        val currentIndex = indexOfTab("State")
+        if (visible) {
+            if (currentIndex == -1) {
+                tabs.addTab("State", stateTabComponent)
             }
         } else if (currentIndex != -1) {
             tabs.removeTabAt(currentIndex)
