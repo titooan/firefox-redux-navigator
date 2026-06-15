@@ -24,6 +24,7 @@ import javax.swing.JViewport
 class NativeFlowPreviewPanel(
     private val onNodeNavigate: ((DiagramNodeTarget) -> Unit)? = null,
     private val onNodeSelected: ((DiagramNodeTarget) -> Unit)? = null,
+    private val createNodeContextMenu: ((DiagramNodeTarget) -> javax.swing.JPopupMenu?)? = null,
     private val adapter: ReduxGraphAdapter = ReduxGraphAdapter(),
     private val layouter: FlowGraphLayouter = FlowGraphLayouter()
 ) : JPanel(BorderLayout()) {
@@ -77,6 +78,10 @@ class NativeFlowPreviewPanel(
             onNodeDoubleClick = { nodeId ->
                 val target = nodeTargets[nodeId] ?: return@setInteractiveNodeIds
                 onNodeNavigate?.invoke(target)
+            },
+            createNodeContextMenu = { nodeId ->
+                val target = nodeTargets[nodeId] ?: return@setInteractiveNodeIds null
+                createNodeContextMenu?.invoke(target)
             }
         )
         add(createHeader(), BorderLayout.NORTH)
@@ -208,6 +213,12 @@ class NativeFlowPreviewPanel(
             .map { it.isFocusable to it.isFocusPainted }
 
     internal fun interactiveNodeIdsForTest(): Set<String> = nodeTargets.keys
+
+    internal fun contextMenuLabelsForTest(nodeId: String): List<String> =
+        graphPanel.contextMenuForTest(nodeId)
+            ?.components
+            ?.mapNotNull { (it as? javax.swing.JMenuItem)?.text }
+            .orEmpty()
 
     companion object {
         private val LOG = Logger.getInstance(NativeFlowPreviewPanel::class.java)

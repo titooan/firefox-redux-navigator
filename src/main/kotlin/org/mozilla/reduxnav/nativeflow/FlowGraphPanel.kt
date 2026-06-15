@@ -17,6 +17,7 @@ import java.awt.geom.Path2D
 import java.awt.geom.PathIterator
 import java.awt.geom.RoundRectangle2D
 import javax.swing.JComponent
+import javax.swing.JPopupMenu
 import javax.swing.ToolTipManager
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -32,6 +33,7 @@ class FlowGraphPanel(
     private var interactiveNodeIds: Set<String> = emptySet()
     private var onNodeSelected: ((String) -> Unit)? = null
     private var onNodeDoubleClick: ((String) -> Unit)? = null
+    private var createNodeContextMenu: ((String) -> JPopupMenu?)? = null
     private var selectedNodeId: String? = null
     private var scale = 1.0
 
@@ -55,11 +57,13 @@ class FlowGraphPanel(
     fun setInteractiveNodeIds(
         nodeIds: Set<String>,
         onNodeSelected: ((String) -> Unit)? = null,
-        onNodeDoubleClick: ((String) -> Unit)? = null
+        onNodeDoubleClick: ((String) -> Unit)? = null,
+        createNodeContextMenu: ((String) -> JPopupMenu?)? = null
     ) {
         interactiveNodeIds = nodeIds
         this.onNodeSelected = onNodeSelected
         this.onNodeDoubleClick = onNodeDoubleClick
+        this.createNodeContextMenu = createNodeContextMenu
         updateCursorFor(null)
         repaint()
     }
@@ -209,9 +213,29 @@ class FlowGraphPanel(
                     onNodeDoubleClick?.invoke(nodeId)
                 }
             }
+
+            override fun mousePressed(event: MouseEvent) {
+                maybeShowContextMenu(event)
+            }
+
+            override fun mouseReleased(event: MouseEvent) {
+                maybeShowContextMenu(event)
+            }
         }
         addMouseMotionListener(listener)
         addMouseListener(listener)
+    }
+
+    private fun maybeShowContextMenu(event: MouseEvent) {
+        if (!event.isPopupTrigger) return
+
+        val nodeId = nodeAt(event.point)?.id ?: return
+        if (nodeId !in interactiveNodeIds) return
+
+        selectedNodeId = nodeId
+        repaint()
+        onNodeSelected?.invoke(nodeId)
+        createNodeContextMenu?.invoke(nodeId)?.show(this, event.x, event.y)
     }
 
     private fun updateCursorFor(point: Point?) {
@@ -253,6 +277,8 @@ class FlowGraphPanel(
     }
 
     internal fun selectedNodeIdForTest(): String? = selectedNodeId
+
+    internal fun contextMenuForTest(nodeId: String): JPopupMenu? = createNodeContextMenu?.invoke(nodeId)
 
     private fun createRoundedPath(points: List<Point2D>): Path2D.Double =
         Path2D.Double().apply {

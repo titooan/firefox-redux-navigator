@@ -307,7 +307,8 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
                 )
             )
 
-            assertEquals("State", panel.selectedTabTitle())
+            assertEquals("Graph", panel.selectedTabTitle())
+            assertEquals(listOf("Graph", "Mermaid Source", "State"), panel.tabTitlesForTest())
             assertEquals("State Explorer: BrowserState.selectedTabId", panel.stateHeaderTextForTest())
             assertEquals(listOf("SelectTabAction"), panel.stateActionLabelsForTest())
             assertEquals(listOf("SelectTabAction: selectedTabId = action.tabId"), panel.stateModificationLabelsForTest())
@@ -315,6 +316,62 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
             assertTrue(panel.mermaidText().contains("action_0 --> reducer_0"))
             assertTrue(panel.mermaidText().contains("reducer_0 --> state"))
             assertEquals(setOf("action_0", "reducer_0", "state"), panel.diagramNodeTargetsForTest().keys)
+        } finally {
+            panel.dispose()
+        }
+    }
+
+    fun testShowActionGraphRestoresFlowTabAfterStateGraph() {
+        val panel = ReduxFlowPanel(project) {}
+        try {
+            panel.showStateGraph(
+                StateFieldGraph(
+                    stateField = stateFieldInfo(),
+                    modifications = emptyList()
+                )
+            )
+
+            panel.showGraph(
+                ActionGraph(
+                    actionInfo("AddTabAction"),
+                    listOf(usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH))
+                )
+            )
+
+            assertEquals(listOf("Graph", "Mermaid Source", "Flow", "State"), panel.tabTitlesForTest())
+            assertEquals("Graph", panel.selectedTabTitle())
+        } finally {
+            panel.dispose()
+        }
+    }
+
+    fun testStateGraphActionNodesExposeReduxFlowContextMenu() {
+        val panel = ReduxFlowPanel(project) {}
+        try {
+            val action = actionInfo("SelectTabAction")
+            val modification = StateModification(
+                stateField = stateFieldInfo(),
+                action = action,
+                reducerUsage = null,
+                modificationPointer = usage("Reducer.kt", "/work/Reducer.kt", 20, ReduxUsageKind.REDUCER).element,
+                fileName = "Reducer.kt",
+                filePath = "/work/Reducer.kt",
+                lineNumber = 20,
+                snippet = "selectedTabId = action.tabId"
+            )
+
+            panel.showStateGraph(
+                StateFieldGraph(
+                    stateField = stateFieldInfo(),
+                    modifications = listOf(modification)
+                )
+            )
+
+            assertEquals(
+                listOf("Show Redux graph for this action"),
+                panel.graphContextMenuLabelsForTest("action_0")
+            )
+            assertEquals(emptyList<String>(), panel.graphContextMenuLabelsForTest("reducer_0"))
         } finally {
             panel.dispose()
         }

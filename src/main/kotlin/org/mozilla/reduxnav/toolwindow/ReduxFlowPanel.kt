@@ -50,7 +50,9 @@ import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
+import javax.swing.JMenuItem
 import javax.swing.JPanel
+import javax.swing.JPopupMenu
 import javax.swing.JToggleButton
 
 class ReduxFlowPanel(
@@ -68,7 +70,8 @@ class ReduxFlowPanel(
     )
     private val graphPreviewPanel = NativeFlowPreviewPanel(
         onNodeNavigate = ::navigateFromDiagramNode,
-        onNodeSelected = ::previewDiagramNode
+        onNodeSelected = ::previewDiagramNode,
+        createNodeContextMenu = ::createDiagramNodeContextMenu
     )
     private val codePreviewPanel = ReduxCodePreviewPanel(project)
     private val headerTitle = JBLabel("Redux Flow").apply {
@@ -101,12 +104,14 @@ class ReduxFlowPanel(
         wrapStyleWord = false
         border = JBEmptyBorder(12)
     }
+    private val flowTabComponent = JBScrollPane(contentPanel)
+    private val stateTabComponent = JBScrollPane(stateExplorerPanel)
     private val tabs = JBTabbedPane().apply {
         border = JBUI.Borders.empty()
         addTab("Graph", graphPreviewPanel)
         addTab("Mermaid Source", JBScrollPane(mermaidTextArea))
-        addTab("Flow", JBScrollPane(contentPanel))
-        addTab("State", JBScrollPane(stateExplorerPanel))
+        addTab("Flow", flowTabComponent)
+        addTab("State", stateTabComponent)
         selectedIndex = GRAPH_TAB_INDEX
     }
     private val mainSplitter = OnePixelSplitter(true, 0.68f).apply {
@@ -141,6 +146,7 @@ class ReduxFlowPanel(
         stateExplorerPanel.showEmptyState()
         renderActionGraph(null)
         resetCodePreview()
+        ensureFlowTabVisible(true)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -157,6 +163,7 @@ class ReduxFlowPanel(
         renderMessage("The selected Redux Action is no longer valid. Re-run Show Redux Flow.")
         renderActionGraph(null)
         resetCodePreview()
+        ensureFlowTabVisible(true)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -173,6 +180,7 @@ class ReduxFlowPanel(
         renderMessage("Could not build Redux flow for this action.")
         graphPreviewPanel.showErrorMessage("Could not build Redux graph.")
         resetCodePreview()
+        ensureFlowTabVisible(true)
         setButtonsEnabled(false)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -183,6 +191,7 @@ class ReduxFlowPanel(
         currentStateGraph = null
         currentAction = graph.action
         currentPreviewTarget = null
+        ensureFlowTabVisible(true)
         renderCurrentGraph(graph)
         tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
@@ -199,8 +208,9 @@ class ReduxFlowPanel(
         renderFlowGraph(null, emptyMessage = "State graph is unavailable for this selection.")
         renderMermaid("")
         hideCodePreview()
+        ensureFlowTabVisible(false)
         setButtonsEnabled(false)
-        tabs.selectedIndex = STATE_TAB_INDEX
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -215,8 +225,9 @@ class ReduxFlowPanel(
         renderFlowGraph(null, emptyMessage = "Could not build the state graph for this field.")
         renderMermaid("")
         hideCodePreview()
+        ensureFlowTabVisible(false)
         setButtonsEnabled(false)
-        tabs.selectedIndex = STATE_TAB_INDEX
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -231,8 +242,9 @@ class ReduxFlowPanel(
         renderFlowGraph(null, emptyMessage = "Loading state graph...")
         renderMermaid("")
         hideCodePreview()
+        ensureFlowTabVisible(false)
         setButtonsEnabled(false)
-        tabs.selectedIndex = STATE_TAB_INDEX
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -245,8 +257,9 @@ class ReduxFlowPanel(
         renderCurrentStateGraph(graph)
         stateExplorerPanel.showStateGraph(graph)
         hideCodePreview()
+        ensureFlowTabVisible(false)
         setButtonsEnabled(currentMermaid.isNotBlank())
-        tabs.selectedIndex = STATE_TAB_INDEX
+        tabs.selectedIndex = GRAPH_TAB_INDEX
         updateHeaderLayout()
     }
 
@@ -416,6 +429,19 @@ class ReduxFlowPanel(
         }
     }
 
+    private fun createDiagramNodeContextMenu(target: DiagramNodeTarget): JPopupMenu? {
+        val action = (target as? DiagramNodeTarget.ActionTarget)?.action ?: return null
+        return JPopupMenu().apply {
+            add(
+                JMenuItem("Show Redux graph for this action").apply {
+                    addActionListener {
+                        ReduxFlowToolWindowService.getInstance(project).showFlow(action)
+                    }
+                }
+            )
+        }
+    }
+
     private fun previewDiagramNode(target: DiagramNodeTarget) {
         currentPreviewTarget = target
         showCodePreview(target)
@@ -471,6 +497,9 @@ class ReduxFlowPanel(
 
     internal fun tabTitlesForTest(): List<String> =
         (0 until tabs.tabCount).map(tabs::getTitleAt)
+
+    internal fun graphContextMenuLabelsForTest(nodeId: String): List<String> =
+        graphPreviewPanel.contextMenuLabelsForTest(nodeId)
 
     internal fun setIncludeTestsForTest(include: Boolean) {
         includeTestsModel.isSelected = include
@@ -529,6 +558,20 @@ class ReduxFlowPanel(
             .flatMap { panel -> panel.components.toList() }
             .filterIsInstance<JButton>()
 
+    private fun ensureFlowTabVisible(visible: Boolean) {
+        val currentIndex = indexOfTab("Flow")
+        if (visible) {
+            if (currentIndex == -1) {
+                tabs.insertTab("Flow", null, flowTabComponent, null, FLOW_TAB_INDEX)
+            }
+        } else if (currentIndex != -1) {
+            tabs.removeTabAt(currentIndex)
+        }
+    }
+
+    private fun indexOfTab(title: String): Int =
+        (0 until tabs.tabCount).firstOrNull { tabs.getTitleAt(it) == title } ?: -1
+
     private fun resetCodePreview() {
         renderMermaid("")
         hideCodePreview()
@@ -568,7 +611,7 @@ class ReduxFlowPanel(
     companion object {
         private val LOG = Logger.getInstance(ReduxFlowPanel::class.java)
         private const val GRAPH_TAB_INDEX = 0
-        private const val STATE_TAB_INDEX = 3
+        private const val FLOW_TAB_INDEX = 2
         private const val NOTIFICATION_GROUP_ID = "Redux Navigator"
         private const val HEADER_GAP = 16
         private val sectionOrder = listOf(
