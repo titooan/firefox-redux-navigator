@@ -7,6 +7,7 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import org.mozilla.reduxnav.graph.ReduxGraphAdapter
 import org.mozilla.reduxnav.graph.ReduxGraph
+import org.mozilla.reduxnav.toolwindow.ReduxFlowPanel
 import org.mozilla.reduxnav.ui.withTransientFocusRing
 import java.awt.BorderLayout
 import java.awt.Dimension
@@ -17,6 +18,8 @@ import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
+import javax.swing.JMenuItem
+import javax.swing.MenuElement
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 import javax.swing.JViewport
@@ -216,9 +219,21 @@ class NativeFlowPreviewPanel(
 
     internal fun contextMenuLabelsForTest(nodeId: String): List<String> =
         graphPanel.contextMenuForTest(nodeId)
-            ?.components
-            ?.mapNotNull { (it as? javax.swing.JMenuItem)?.text }
+            ?.let { menu ->
+                @Suppress("UNCHECKED_CAST")
+                (menu.getClientProperty(ReduxFlowPanel.CONTEXT_MENU_LABELS_TEST_KEY) as? List<String>)
+                    ?: menu.subElements.toList().flatMap(::collectMenuItemLabels)
+            }
             .orEmpty()
+
+    private fun collectMenuItemLabels(element: MenuElement): List<String> =
+        buildList {
+            val component = element.component
+            if (component is JMenuItem) {
+                component.text?.takeIf { it.isNotBlank() }?.let(::add)
+            }
+            element.subElements.forEach { child -> addAll(collectMenuItemLabels(child)) }
+        }
 
     companion object {
         private val LOG = Logger.getInstance(NativeFlowPreviewPanel::class.java)

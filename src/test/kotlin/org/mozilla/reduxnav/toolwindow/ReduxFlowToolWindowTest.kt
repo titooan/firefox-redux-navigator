@@ -276,6 +276,12 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         assertEquals("Graph", panel.selectedTabTitle())
     }
 
+    fun testPanelDisablesIncludeTestsByDefault() {
+        val panel = ReduxFlowPanel(project) {}
+
+        assertFalse(panel.includesTestsForTest())
+    }
+
     fun testPanelUsesFlowGraphMermaidTabOrder() {
         val panel = ReduxFlowPanel(project) {}
 

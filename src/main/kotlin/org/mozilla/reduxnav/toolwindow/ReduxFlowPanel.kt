@@ -8,6 +8,10 @@ import com.intellij.openapi.project.Project
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
@@ -50,7 +54,6 @@ import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JButton
 import javax.swing.JComponent
-import javax.swing.JMenuItem
 import javax.swing.JPanel
 import javax.swing.JPopupMenu
 import javax.swing.JToggleButton
@@ -78,7 +81,7 @@ class ReduxFlowPanel(
         font = JBFont.h3().asBold()
     }
     private val includeTestsModel = JToggleButton.ToggleButtonModel().apply {
-        isSelected = true
+        isSelected = false
     }
     private val inlineControls = createControlsRow(wrap = false)
     private val stackedControls = createControlsRow(wrap = true)
@@ -431,15 +434,21 @@ class ReduxFlowPanel(
 
     private fun createDiagramNodeContextMenu(target: DiagramNodeTarget): JPopupMenu? {
         val action = (target as? DiagramNodeTarget.ActionTarget)?.action ?: return null
-        return JPopupMenu().apply {
+        val group = DefaultActionGroup().apply {
             add(
-                JMenuItem("Show Redux graph for this action").apply {
-                    addActionListener {
+                object : DumbAwareAction("Show Redux graph for this action") {
+                    override fun actionPerformed(event: AnActionEvent) {
                         ReduxFlowToolWindowService.getInstance(project).showFlow(action)
                     }
                 }
             )
         }
+        return ActionManager.getInstance()
+            .createActionPopupMenu("ReduxFlow.StateGraphNode", group)
+            .component
+            .apply {
+                putClientProperty(CONTEXT_MENU_LABELS_TEST_KEY, listOf("Show Redux graph for this action"))
+            }
     }
 
     private fun previewDiagramNode(target: DiagramNodeTarget) {
@@ -610,6 +619,7 @@ class ReduxFlowPanel(
 
     companion object {
         private val LOG = Logger.getInstance(ReduxFlowPanel::class.java)
+        internal const val CONTEXT_MENU_LABELS_TEST_KEY = "reduxNav.contextMenuLabels"
         private const val GRAPH_TAB_INDEX = 0
         private const val FLOW_TAB_INDEX = 2
         private const val NOTIFICATION_GROUP_ID = "Redux Navigator"
