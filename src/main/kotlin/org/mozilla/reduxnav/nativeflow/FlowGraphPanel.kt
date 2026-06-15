@@ -39,6 +39,8 @@ class FlowGraphPanel(
 
     init {
         isOpaque = true
+        isFocusable = true
+        isRequestFocusEnabled = true
         border = JBUI.Borders.empty(16)
         ToolTipManager.sharedInstance().registerComponent(this)
         installNodeInteraction()
@@ -204,6 +206,7 @@ class FlowGraphPanel(
             }
 
             override fun mouseClicked(event: MouseEvent) {
+                requestFocusInWindow()
                 if (event.button != MouseEvent.BUTTON1) return
                 val nodeId = nodeAt(event.point)?.id ?: return
                 selectedNodeId = nodeId
@@ -215,6 +218,7 @@ class FlowGraphPanel(
             }
 
             override fun mousePressed(event: MouseEvent) {
+                requestFocusInWindow()
                 maybeShowContextMenu(event)
             }
 

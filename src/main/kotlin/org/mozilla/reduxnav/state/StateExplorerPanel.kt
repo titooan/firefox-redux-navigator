@@ -34,7 +34,8 @@ class StateExplorerPanel(
     private val onActionSelected: (ActionInfo) -> Unit,
     private val onActionNavigate: (ActionInfo) -> Unit,
     private val onModificationSelected: (StateModification) -> Unit,
-    private val onModificationNavigate: (StateModification) -> Unit
+    private val onModificationNavigate: (StateModification) -> Unit,
+    private val onActivated: (() -> Unit)? = null
 ) : JPanel() {
     private val rowBackground = JBColor(
         java.awt.Color(0x000000, true),
@@ -258,6 +259,8 @@ class StateExplorerPanel(
 
                 override fun mouseClicked(event: MouseEvent) {
                     if (event.button != MouseEvent.BUTTON1) return
+                    requestFocusInWindow()
+                    onActivated?.invoke()
                     setSelectedRow(this@apply)
                     onSingleClick()
                     if (event.clickCount >= 2) {

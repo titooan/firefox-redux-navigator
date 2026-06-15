@@ -10,9 +10,11 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DataProvider
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.ui.OnePixelSplitter
+import com.intellij.ui.navigation.History
 import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -47,9 +49,13 @@ import java.awt.BorderLayout
 import java.awt.Container
 import java.awt.Dimension
 import java.awt.FlowLayout
+import java.awt.KeyboardFocusManager
 import java.awt.datatransfer.StringSelection
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.beans.PropertyChangeListener
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.JButton
@@ -57,11 +63,13 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.JPopupMenu
 import javax.swing.JToggleButton
+import javax.swing.SwingUtilities
 
 class ReduxFlowPanel(
     private val project: Project,
+    private val paneHistory: History? = null,
     private val onRefresh: () -> Unit
-) : JPanel(BorderLayout()), Disposable {
+) : JPanel(BorderLayout()), Disposable, DataProvider {
     private val reduxGraphBuilder = ReduxGraphBuilder()
     private val stateGraphBuilder = StateGraphBuilder()
     private val stateGraphAdapter = StateGraphAdapter()
@@ -79,6 +87,10 @@ class ReduxFlowPanel(
     private val codePreviewPanel = ReduxCodePreviewPanel(project)
     private val headerTitle = JBLabel("Redux Flow").apply {
         font = JBFont.h3().asBold()
+    }
+    private val historyStatusLabel = JBLabel().apply {
+        foreground = com.intellij.ui.JBColor.GRAY
+        font = JBFont.small()
     }
     private val includeTestsModel = JToggleButton.ToggleButtonModel().apply {
         isSelected = false
@@ -99,7 +111,8 @@ class ReduxFlowPanel(
         onActionSelected = { showCodePreviewForAction(it) },
         onActionNavigate = { navigateToAction(project, it) },
         onModificationSelected = { showCodePreviewForModification(it) },
-        onModificationNavigate = { navigateToModification(project, it) }
+        onModificationNavigate = { navigateToModification(project, it) },
+        onActivated = ::activatePane
     )
     private val mermaidTextArea = JBTextArea().apply {
         isEditable = false
@@ -128,12 +141,22 @@ class ReduxFlowPanel(
     private var currentDiagramTargets: Map<String, DiagramNodeTarget> = emptyMap()
     private var currentPreviewTarget: DiagramNodeTarget? = null
     private var currentStateGraph: StateFieldGraph? = null
+    private var backAvailable: Boolean = false
+    private var forwardAvailable: Boolean = false
+    private val focusOwnerListener = PropertyChangeListener {
+        refreshHistoryStatusLabel()
+    }
 
     init {
         border = JBUI.Borders.empty()
+        isFocusable = true
+        isRequestFocusEnabled = true
         includeTestsModel.addActionListener { rerenderCurrentGraph() }
+        installActivationForwarding()
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addPropertyChangeListener("focusOwner", focusOwnerListener)
         add(headerPanel, BorderLayout.NORTH)
         add(mainSplitter, BorderLayout.CENTER)
+        refreshHistoryStatusLabel()
         showEmptyState()
     }
 
@@ -350,7 +373,14 @@ class ReduxFlowPanel(
                 add(inlineControls, BorderLayout.EAST)
             }
             add(primaryRow, BorderLayout.NORTH)
-            add(secondaryHeaderRow, BorderLayout.SOUTH)
+            add(
+                JPanel(BorderLayout()).apply {
+                    isOpaque = false
+                    add(historyStatusLabel, BorderLayout.WEST)
+                    add(secondaryHeaderRow, BorderLayout.CENTER)
+                },
+                BorderLayout.SOUTH
+            )
             addComponentListener(object : ComponentAdapter() {
                 override fun componentResized(event: ComponentEvent) {
                     updateHeaderLayout()
@@ -567,8 +597,31 @@ class ReduxFlowPanel(
         return stackedControls.preferredSize.height
     }
 
+    internal fun headerTitleTextForTest(): String = headerTitle.text
+
+    internal fun historyForTest(): History? = paneHistory
+
+    internal fun historyStatusTextForTest(): String = historyStatusLabel.text
+
+    internal fun selectTabForTest(title: String) {
+        indexOfTab(title).takeIf { it >= 0 }?.let { tabs.selectedIndex = it }
+    }
+
+    override fun getData(dataId: String): Any? =
+        when {
+            History.KEY.`is`(dataId) -> paneHistory
+            else -> null
+        }
+
     override fun dispose() {
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().removePropertyChangeListener("focusOwner", focusOwnerListener)
         codePreviewPanel.dispose()
+    }
+
+    internal fun updatePaneHistoryStatus(canGoBack: Boolean, canGoForward: Boolean) {
+        backAvailable = canGoBack
+        forwardAvailable = canGoForward
+        refreshHistoryStatusLabel()
     }
 
     private fun controlsButtons(): List<JButton> =
@@ -619,6 +672,43 @@ class ReduxFlowPanel(
         codePreviewPanel.showTarget(target)
         mainSplitter.revalidate()
         mainSplitter.repaint()
+    }
+
+    private fun installActivationForwarding() {
+        registerActivationTarget(this)
+        registerActivationTarget(headerPanel)
+        registerActivationTarget(mainSplitter)
+        registerActivationTarget(tabs)
+        registerActivationTarget(graphPreviewPanel)
+        registerActivationTarget(contentPanel)
+        registerActivationTarget(stateExplorerPanel)
+        registerActivationTarget(codePreviewPanel)
+    }
+
+    private fun registerActivationTarget(component: JComponent) {
+        component.isRequestFocusEnabled = true
+        component.addMouseListener(
+            object : MouseAdapter() {
+                override fun mousePressed(event: MouseEvent) {
+                    activatePane()
+                }
+            }
+        )
+    }
+
+    private fun activatePane() {
+        requestFocusInWindow()
+        refreshHistoryStatusLabel()
+    }
+
+    private fun refreshHistoryStatusLabel() {
+        historyStatusLabel.text =
+            "Pane history: back ${yesNo(backAvailable)} | forward ${yesNo(forwardAvailable)} | focus ${yesNo(hasPaneFocus())}"
+    }
+
+    private fun hasPaneFocus(): Boolean {
+        val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner ?: return false
+        return focusOwner === this || SwingUtilities.isDescendingFrom(focusOwner, this)
     }
 
     private fun summaryLabel(graph: ActionGraph): JComponent {
@@ -750,6 +840,8 @@ class ReduxFlowPanel(
 
         private fun countLabel(count: Int, singular: String, plural: String): String =
             if (count == 1) "1 $singular" else "$count $plural"
+
+        private fun yesNo(value: Boolean): String = if (value) "yes" else "no"
     }
 }
 

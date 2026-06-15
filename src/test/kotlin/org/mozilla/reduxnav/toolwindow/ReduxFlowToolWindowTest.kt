@@ -2,6 +2,7 @@ package org.mozilla.reduxnav.toolwindow
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.testFramework.PlatformTestUtil
+import com.intellij.ui.navigation.History
 import org.jetbrains.kotlin.psi.KtClassOrObject
 import org.mozilla.reduxnav.analysis.ActionSymbolResolver
 import org.mozilla.reduxnav.graph.ReduxGraphBuilder
@@ -17,6 +18,14 @@ import org.mozilla.reduxnav.state.StateModification
 import java.io.File
 
 class ReduxFlowToolWindowTest : BasePlatformTestCase() {
+    override fun tearDown() {
+        try {
+            ReduxFlowToolWindowService.getInstance(project).resetForTest()
+        } finally {
+            super.tearDown()
+        }
+    }
+
     fun testShowReduxFlowActionResolvesUsageAtCaret() {
         myFixture.configureByText(
             "Usage.kt",
@@ -282,6 +291,20 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         assertFalse(panel.includesTestsForTest())
     }
 
+    fun testPanelReturnsHistoryFromDataProvider() {
+        val historyController = ReduxPaneHistoryController { _, _ -> }
+        val panel = ReduxFlowPanel(project, historyController.history) {}
+
+        assertSame(historyController.history, panel.getData(History.KEY.name))
+        assertSame(historyController.history, panel.historyForTest())
+    }
+
+    fun testPanelHistoryStatusStartsEmpty() {
+        val panel = ReduxFlowPanel(project) {}
+
+        assertEquals("Pane history: back no | forward no | focus no", panel.historyStatusTextForTest())
+    }
+
     fun testPanelUsesFlowGraphMermaidTabOrder() {
         val panel = ReduxFlowPanel(project) {}
 
@@ -427,6 +450,118 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         )
     }
 
+    fun testServiceBackAndForwardRestoreStateAndActionViews() {
+        val service = toolWindowService()
+        val action = actionInfo("AddTabAction")
+        val field = stateFieldInfo()
+
+        service.showState(field)
+        service.showFlow(action)
+
+        assertTrue(service.canGoBack())
+        assertFalse(service.canGoForward())
+
+        service.goBack()
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+
+        assertEquals("State Explorer: BrowserState.selectedTabId", service.component.headerTitleTextForTest())
+        assertEquals(listOf("Graph", "Mermaid Source", "State"), service.component.tabTitlesForTest())
+        assertTrue(service.component.historyStatusTextForTest().contains("back no"))
+        assertTrue(service.component.historyStatusTextForTest().contains("forward yes"))
+        assertTrue(service.canGoForward())
+
+        service.goForward()
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+
+        assertEquals("Redux Flow: AddTabAction", service.component.headerTitleTextForTest())
+        assertEquals(listOf("Graph", "Mermaid Source", "Flow"), service.component.tabTitlesForTest())
+        assertTrue(service.component.historyStatusTextForTest().contains("back yes"))
+        assertTrue(service.component.historyStatusTextForTest().contains("forward no"))
+    }
+
+    fun testServiceClearsForwardHistoryWhenOpeningNewLocationAfterBack() {
+        val service = toolWindowService()
+        val state = stateFieldInfo()
+        val add = actionInfo("AddTabAction")
+        val remove = actionInfo("RemoveTabAction")
+
+        service.showState(state)
+        service.showFlow(add)
+        service.goBack()
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+
+        assertTrue(service.canGoForward())
+
+        service.showFlow(remove)
+
+        assertFalse(service.canGoForward())
+        assertTrue(service.canGoBack())
+    }
+
+    fun testServiceDoesNotPushDuplicateAdjacentLocations() {
+        val service = toolWindowService()
+        val action = actionInfo("AddTabAction")
+
+        service.showFlow(action)
+        service.showFlow(action.copy())
+
+        assertFalse(service.canGoBack())
+    }
+
+    fun testPreviewSelectionDoesNotCreateHistoryEntry() {
+        val service = toolWindowService()
+        val dispatch = usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH)
+
+        service.component.showGraph(
+            ActionGraph(
+                actionInfo("AddTabAction"),
+                listOf(dispatch)
+            )
+        )
+        service.component.previewCurrentTargetForTest(DiagramNodeTarget.UsageTarget(dispatch))
+
+        assertFalse(service.canGoBack())
+        assertFalse(service.canGoForward())
+    }
+
+    fun testTabSwitchingDoesNotCreateHistoryEntry() {
+        val service = toolWindowService()
+
+        service.showState(stateFieldInfo())
+        service.component.selectTabForTest("State")
+        service.component.selectTabForTest("Graph")
+
+        assertFalse(service.canGoBack())
+        assertFalse(service.canGoForward())
+    }
+
+    fun testIncludeTestsToggleDoesNotCreateHistoryEntry() {
+        val service = toolWindowService()
+
+        service.component.showGraph(
+            ActionGraph(
+                actionInfo("AddTabAction"),
+                listOf(usage("Dispatch.kt", "/work/Dispatch.kt", 4, ReduxUsageKind.DISPATCH))
+            )
+        )
+        service.component.setIncludeTestsForTest(true)
+        service.component.setIncludeTestsForTest(false)
+
+        assertFalse(service.canGoBack())
+        assertFalse(service.canGoForward())
+    }
+
+    fun testRefreshCurrentDoesNotCreateHistoryEntry() {
+        val service = toolWindowService()
+        val action = actionInfo("AddTabAction")
+
+        service.showFlow(action)
+        service.refreshCurrent()
+
+        assertFalse(service.canGoBack())
+        assertFalse(service.canGoForward())
+    }
+
     private fun actionInfo(name: String): ActionInfo {
         myFixture.configureByText(
             "$name.kt",
@@ -476,4 +611,7 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
             qualifiedPath = "BrowserState.selectedTabId",
             declarationPointer = null
         )
+
+    private fun toolWindowService(): ReduxFlowToolWindowService =
+        ReduxFlowToolWindowService.getInstance(project).also { it.resetForTest() }
 }

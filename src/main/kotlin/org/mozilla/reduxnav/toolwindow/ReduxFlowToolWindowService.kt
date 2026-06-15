@@ -8,6 +8,8 @@ import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.psi.PsiElement
+import com.intellij.ui.navigation.HistoryListener
+import com.intellij.ui.navigation.Place
 import org.mozilla.reduxnav.analysis.ReduxActionGraphCache
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.state.StateFieldInfo
@@ -16,24 +18,42 @@ import org.mozilla.reduxnav.state.StateModificationCache
 @Service(Service.Level.PROJECT)
 class ReduxFlowToolWindowService(private val project: Project) {
     private val logger = Logger.getInstance(ReduxFlowToolWindowService::class.java)
-    val component = ReduxFlowPanel(project) { refreshCurrent() }
+    private val historyController = ReduxPaneHistoryController(::navigateFromHistory)
+    val component = ReduxFlowPanel(project, historyController.history) { refreshCurrent() }
 
     private var selectedAction: ActionInfo? = null
     private var selectedStateField: StateFieldInfo? = null
     private var stateRefreshRequestId: Long = 0
 
+    init {
+        historyController.history.addListener(
+            object : HistoryListener {
+                override fun navigationFinished(from: Place?, to: Place?) {
+                    component.updatePaneHistoryStatus(canGoBack(), canGoForward())
+                }
+            },
+            component
+        )
+    }
+
     fun showFlow(action: ActionInfo) {
-        selectedAction = action
-        selectedStateField = null
-        focusToolWindow()
-        refreshCurrent()
+        showLocation(ReduxPaneLocation.Action(action), recordHistory = true, requestFocus = true)
     }
 
     fun showState(field: StateFieldInfo) {
-        selectedStateField = field
-        selectedAction = null
-        focusToolWindow()
-        refreshCurrent()
+        showLocation(ReduxPaneLocation.State(field), recordHistory = true, requestFocus = true)
+    }
+
+    fun canGoBack(): Boolean = historyController.canGoBack()
+
+    fun canGoForward(): Boolean = historyController.canGoForward()
+
+    fun goBack() {
+        historyController.goBack()
+    }
+
+    fun goForward() {
+        historyController.goForward()
     }
 
     fun focusToolWindow() {
@@ -112,6 +132,44 @@ class ReduxFlowToolWindowService(private val project: Project) {
             requestId == stateRefreshRequestId &&
             selectedStateField?.id == field.id &&
             selectedAction == null
+
+    private fun navigateFromHistory(location: ReduxPaneLocation, requestFocus: Boolean) {
+        showLocation(location, recordHistory = false, requestFocus = requestFocus)
+    }
+
+    internal fun showLocation(
+        location: ReduxPaneLocation,
+        recordHistory: Boolean,
+        requestFocus: Boolean = true
+    ) {
+        if (recordHistory) {
+            historyController.record(location)
+        }
+        when (location) {
+            is ReduxPaneLocation.Action -> {
+                selectedAction = location.action
+                selectedStateField = null
+            }
+            is ReduxPaneLocation.State -> {
+                selectedStateField = location.field
+                selectedAction = null
+            }
+        }
+        if (requestFocus) {
+            focusToolWindow()
+        }
+        refreshCurrent()
+        component.updatePaneHistoryStatus(canGoBack(), canGoForward())
+    }
+
+    internal fun resetForTest() {
+        selectedAction = null
+        selectedStateField = null
+        stateRefreshRequestId = 0
+        historyController.clear()
+        component.showEmptyState()
+        component.updatePaneHistoryStatus(canGoBack(), canGoForward())
+    }
 
     companion object {
         const val TOOL_WINDOW_ID = "Redux Flow"
