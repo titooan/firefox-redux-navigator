@@ -1,5 +1,12 @@
 # Firefox Redux Navigator
 
+## Install
+
+Download the latest plugin ZIP from the [GitHub Releases page](https://github.com/mozilla-mobile/firefox-redux-navigator/releases/latest).
+
+In Android Studio, open **Settings / Preferences > Plugins > Gear icon > Install Plugin from Disk...**,
+select the downloaded ZIP, then restart Android Studio.
+
 First iteration of an Android Studio / IntelliJ plugin to navigate Firefox Android Redux actions.
 
 ## What works in this first iteration
@@ -203,6 +210,17 @@ The built plugin zip will be under:
 ```text
 build/distributions/
 ```
+
+## Releases
+
+Pushing a Git tag in the form `v<semantic-version>` creates a GitHub Release with an
+installable plugin ZIP. The release build takes its plugin version from the tag, so
+`v1.0.0` produces a plugin with version `1.0.0`; the development value in
+`gradle.properties` is not changed.
+
+Download the ZIP from the repository's GitHub Releases page, then install it through
+Android Studio's **Settings / Preferences > Plugins > Gear icon > Install Plugin from
+Disk...** action.
 
 ## Try it in Android Studio
 

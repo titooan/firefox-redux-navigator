@@ -1,0 +1,74 @@
+name: Release Android Studio Plugin
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish plugin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Derive and validate plugin version
+        id: version
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$TAG_NAME" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tags must use the format v<semantic-version>; received: $TAG_NAME" >&2
+            exit 1
+          fi
+
+          PLUGIN_VERSION="${TAG_NAME#v}"
+          if [[ -z "$PLUGIN_VERSION" ]]; then
+            echo "The plugin version derived from $TAG_NAME is empty." >&2
+            exit 1
+          fi
+
+          echo "plugin_version=$PLUGIN_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Test and build plugin
+        env:
+          PLUGIN_VERSION: ${{ steps.version.outputs.plugin_version }}
+        run: ./gradlew test buildPlugin -PpluginVersion="$PLUGIN_VERSION"
+
+      - name: Locate plugin archive
+        id: archive
+        run: |
+          shopt -s nullglob
+          archives=(build/distributions/*.zip)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "Expected exactly one plugin ZIP in build/distributions, found ${#archives[@]}." >&2
+            exit 1
+          fi
+
+          echo "path=${archives[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          PLUGIN_ARCHIVE: ${{ steps.archive.outputs.path }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$PLUGIN_ARCHIVE" --clobber
+          else
+            gh release create "$TAG_NAME" "$PLUGIN_ARCHIVE" \
+              --title "$TAG_NAME" \
+              --generate-notes
+          fi
