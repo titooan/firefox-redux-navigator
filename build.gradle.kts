@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 
 plugins {
@@ -35,6 +36,12 @@ kotlin {
 
 intellijPlatform {
     instrumentCode = false
+
+    pluginVerification {
+        ides {
+            create(IntelliJPlatformType.IntellijIdea, "262.9437.22")
+        }
+    }
 
     pluginConfiguration {
         id = "org.mozilla.firefox-redux-navigator"
