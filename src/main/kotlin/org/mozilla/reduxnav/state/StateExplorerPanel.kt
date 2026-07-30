@@ -159,7 +159,7 @@ class StateExplorerPanel(
     }
 
     private fun createActionRow(action: ActionInfo): JComponent {
-        val rowData = ReadAction.compute<ActionRowData, RuntimeException> {
+        val rowData = ReadAction.nonBlocking<ActionRowData> {
             val declaration = action.declaration?.element
             val anchor = (declaration as? KtClassOrObject)?.nameIdentifier ?: declaration
             ActionRowData(
@@ -175,7 +175,7 @@ class StateExplorerPanel(
                     )
                 )
             )
-        }
+        }.executeSynchronously()
         return createInteractiveRow(
             icon = rowData.icon,
             fileName = rowData.fileName,

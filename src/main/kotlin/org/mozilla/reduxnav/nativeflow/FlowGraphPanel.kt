@@ -3,6 +3,7 @@ package org.mozilla.reduxnav.nativeflow
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.JBUI
+import com.intellij.ui.scale.JBUIScale
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Cursor
@@ -135,7 +136,7 @@ class FlowGraphPanel(
         g.color = colors.fill
         g.fill(shape)
         g.color = if (node.id == selectedNodeId) UIUtil.getFocusedBorderColor() else colors.border
-        g.stroke = BasicStroke(JBUI.scale(if (node.id == selectedNodeId) 2f else 1f))
+        g.stroke = BasicStroke(JBUIScale.scale(if (node.id == selectedNodeId) 2f else 1f))
         g.draw(shape)
 
         g.color = colors.text
@@ -150,7 +151,7 @@ class FlowGraphPanel(
 
         g.color = edgeColor(edge)
         g.stroke = BasicStroke(
-            JBUI.scale(1.5f),
+            JBUIScale.scale(1.5f),
             BasicStroke.CAP_ROUND,
             BasicStroke.JOIN_ROUND
         )

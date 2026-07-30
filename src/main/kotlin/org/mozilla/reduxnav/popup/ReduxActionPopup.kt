@@ -110,11 +110,11 @@ object ReduxActionPopup {
                     }
                     is PopupEntry.UsageEntry -> {
                         if (e.clickCount < 2) return
-                        val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
-                            val target = entry.usage.element.element ?: return@compute null
-                            val file = target.containingFile?.virtualFile ?: return@compute null
+                        val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
+                            val target = entry.usage.element.element ?: return@nonBlocking null
+                            val file = target.containingFile?.virtualFile ?: return@nonBlocking null
                             OpenFileDescriptor(project, file, target.textOffset)
-                        } ?: return
+                        }.executeSynchronously() ?: return
                         descriptor.navigate(true)
                         popup.cancel()
                     }

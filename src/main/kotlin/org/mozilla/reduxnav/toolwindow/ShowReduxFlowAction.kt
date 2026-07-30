@@ -5,6 +5,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.StatusBar
@@ -40,9 +41,9 @@ class ShowReduxFlowAction : AnAction() {
 
     internal fun resolveAction(project: Project, editor: Editor, file: PsiFile): ActionInfo? {
         val offset = editor.caretModel.offset
-        val element = ApplicationManager.getApplication().runReadAction<com.intellij.psi.PsiElement?> {
+        val element = ReadAction.nonBlocking<com.intellij.psi.PsiElement?> {
             file.findElementAt(offset)
-        } ?: return null
+        }.executeSynchronously() ?: return null
         return resolver.resolve(element) ?: resolver.resolveDeclaration(element)
     }
 }

@@ -5,6 +5,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.StatusBar
@@ -40,9 +41,9 @@ class StateExplorerAction : AnAction() {
 
     internal fun resolveStateField(project: Project, editor: Editor, file: PsiFile): StateFieldInfo? {
         val offset = editor.caretModel.offset
-        val element = ApplicationManager.getApplication().runReadAction<PsiElement?> {
+        val element = ReadAction.nonBlocking<PsiElement?> {
             file.findElementAt(offset)
-        } ?: return null
+        }.executeSynchronously() ?: return null
         return resolver.resolve(element)
     }
 }

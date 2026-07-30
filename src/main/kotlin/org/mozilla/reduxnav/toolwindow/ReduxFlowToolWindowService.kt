@@ -77,9 +77,9 @@ class ReduxFlowToolWindowService(private val project: Project) {
     }
 
     private fun refreshAction(action: ActionInfo) {
-        val declaration = ReadAction.compute<PsiElement?, RuntimeException> {
+        val declaration = ReadAction.nonBlocking<PsiElement?> {
             action.declaration?.element?.takeIf { it.isValid }
-        }
+        }.executeSynchronously()
         if (declaration == null || !declaration.isValid) {
             component.showInvalidAction(action)
             return
@@ -94,9 +94,9 @@ class ReduxFlowToolWindowService(private val project: Project) {
     }
 
     private fun refreshState(field: StateFieldInfo) {
-        val declaration = ReadAction.compute<PsiElement?, RuntimeException> {
+        val declaration = ReadAction.nonBlocking<PsiElement?> {
             field.declarationPointer?.element?.takeIf { it.isValid }
-        }
+        }.executeSynchronously()
         if (field.declarationPointer != null && (declaration == null || !declaration.isValid)) {
             component.showInvalidState(field)
             return

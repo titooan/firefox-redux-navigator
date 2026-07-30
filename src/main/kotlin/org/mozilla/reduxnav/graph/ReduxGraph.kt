@@ -79,9 +79,9 @@ sealed interface ReduxGraphNavigationTarget {
     ) : ReduxGraphNavigationTarget {
         override val tooltipText: String
             get() {
-                val lineText = ReadAction.compute<String, RuntimeException> {
+                val lineText = ReadAction.nonBlocking<String> {
                     usage.element.element?.lineText() ?: usage.displayText
-                }
+                }.executeSynchronously()
                 return "<html>${usage.fileName}:${usage.line}<br/>${escapeHtml(lineText)}</html>"
             }
     }

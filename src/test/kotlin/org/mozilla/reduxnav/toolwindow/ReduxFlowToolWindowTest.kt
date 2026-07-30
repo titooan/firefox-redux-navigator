@@ -291,11 +291,10 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
         assertFalse(panel.includesTestsForTest())
     }
 
-    fun testPanelReturnsHistoryFromDataProvider() {
+    fun testPanelKeepsHistoryForUiDataProvider() {
         val historyController = ReduxPaneHistoryController { _, _ -> }
         val panel = ReduxFlowPanel(project, historyController.history) {}
 
-        assertSame(historyController.history, panel.getData(History.KEY.name))
         assertSame(historyController.history, panel.historyForTest())
     }
 

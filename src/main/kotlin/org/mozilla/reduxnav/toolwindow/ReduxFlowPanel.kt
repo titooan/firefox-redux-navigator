@@ -10,7 +10,8 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.DataProvider
+import com.intellij.openapi.actionSystem.DataSink
+import com.intellij.openapi.actionSystem.UiDataProvider
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.ui.OnePixelSplitter
@@ -25,7 +26,6 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBEmptyBorder
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.StartupUiUtil
 import org.mozilla.reduxnav.graph.ReduxGraphBuilder
 import org.mozilla.reduxnav.mermaid.MermaidFlowRenderer
 import org.mozilla.reduxnav.mermaid.MermaidFlowStyle
@@ -69,15 +69,15 @@ class ReduxFlowPanel(
     private val project: Project,
     private val paneHistory: History? = null,
     private val onRefresh: () -> Unit
-) : JPanel(BorderLayout()), Disposable, DataProvider {
+) : JPanel(BorderLayout()), Disposable, UiDataProvider {
     private val reduxGraphBuilder = ReduxGraphBuilder()
     private val stateGraphBuilder = StateGraphBuilder()
     private val stateGraphAdapter = StateGraphAdapter()
     private val mermaidRenderer = MermaidFlowRenderer(
-        style = if (StartupUiUtil.isUnderDarcula) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
+        style = if (!com.intellij.ui.JBColor.isBright()) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
     )
     private val stateMermaidRenderer = StateMermaidRenderer(
-        style = if (StartupUiUtil.isUnderDarcula) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
+        style = if (!com.intellij.ui.JBColor.isBright()) MermaidFlowStyle.dark() else MermaidFlowStyle.light()
     )
     private val graphPreviewPanel = NativeFlowPreviewPanel(
         onNodeNavigate = ::navigateFromDiagramNode,
@@ -607,11 +607,9 @@ class ReduxFlowPanel(
         indexOfTab(title).takeIf { it >= 0 }?.let { tabs.selectedIndex = it }
     }
 
-    override fun getData(dataId: String): Any? =
-        when {
-            History.KEY.`is`(dataId) -> paneHistory
-            else -> null
-        }
+    override fun uiDataSnapshot(sink: DataSink) {
+        sink[History.KEY] = paneHistory
+    }
 
     override fun dispose() {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removePropertyChangeListener("focusOwner", focusOwnerListener)
@@ -803,38 +801,38 @@ class ReduxFlowPanel(
         ): ActionLink = ActionLink(text) { onNavigate() }
 
         internal fun navigateToUsage(project: Project, usage: ReduxUsage) {
-            val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
-                val element = usage.element.element ?: return@compute null
-                val file = element.containingFile?.virtualFile ?: return@compute null
+            val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
+                val element = usage.element.element ?: return@nonBlocking null
+                val file = element.containingFile?.virtualFile ?: return@nonBlocking null
                 OpenFileDescriptor(project, file, element.textOffset)
-            } ?: return
+            }.executeSynchronously() ?: return
             descriptor.navigate(true)
         }
 
         internal fun navigateToAction(project: Project, action: ActionInfo) {
-            val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
-                val element = action.declaration?.element ?: return@compute null
-                val file = element.containingFile?.virtualFile ?: return@compute null
+            val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
+                val element = action.declaration?.element ?: return@nonBlocking null
+                val file = element.containingFile?.virtualFile ?: return@nonBlocking null
                 OpenFileDescriptor(project, file, element.textOffset)
-            } ?: return
+            }.executeSynchronously() ?: return
             descriptor.navigate(true)
         }
 
         internal fun navigateToModification(project: Project, modification: StateModification) {
-            val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
-                val element = modification.modificationPointer.element ?: return@compute null
-                val file = element.containingFile?.virtualFile ?: return@compute null
+            val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
+                val element = modification.modificationPointer.element ?: return@nonBlocking null
+                val file = element.containingFile?.virtualFile ?: return@nonBlocking null
                 OpenFileDescriptor(project, file, element.textOffset)
-            } ?: return
+            }.executeSynchronously() ?: return
             descriptor.navigate(true)
         }
 
         internal fun navigateToStateField(project: Project, field: StateFieldInfo) {
-            val descriptor = ReadAction.compute<OpenFileDescriptor?, RuntimeException> {
-                val element = field.declarationPointer?.element ?: return@compute null
-                val file = element.containingFile?.virtualFile ?: return@compute null
+            val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
+                val element = field.declarationPointer?.element ?: return@nonBlocking null
+                val file = element.containingFile?.virtualFile ?: return@nonBlocking null
                 OpenFileDescriptor(project, file, element.textOffset)
-            } ?: return
+            }.executeSynchronously() ?: return
             descriptor.navigate(true)
         }
 

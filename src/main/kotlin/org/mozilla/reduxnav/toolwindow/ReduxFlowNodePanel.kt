@@ -79,7 +79,7 @@ class ReduxFlowNodePanel(
     }
 
     private fun createActionRow(action: ActionInfo): JComponent {
-        val rowData = ReadAction.compute<ActionRowData, RuntimeException> {
+        val rowData = ReadAction.nonBlocking<ActionRowData> {
             val declaration = action.declaration?.element
             ActionRowData(
                 fileName = declaration?.containingFile?.virtualFile?.name ?: "<unknown>",
@@ -89,7 +89,7 @@ class ReduxFlowNodePanel(
                     action.displayName
                 )
             )
-        }
+        }.executeSynchronously()
         val icon = FileTypeManager.getInstance().getFileTypeByFileName(rowData.fileName).icon
         val row = createRowComponent(
             icon = icon,

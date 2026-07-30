@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 
 plugins {
     id("java")
@@ -27,6 +28,9 @@ dependencies {
 
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        jvmDefault.set(JvmDefaultMode.NO_COMPATIBILITY)
+    }
 }
 
 intellijPlatform {
@@ -38,7 +42,7 @@ intellijPlatform {
         version = providers.gradleProperty("pluginVersion")
         description = "Navigate Firefox Android Redux actions from dispatch sites to middleware handlers and reducers."
         ideaVersion {
-            sinceBuild = "251"
+            sinceBuild = "261"
         }
     }
 }

@@ -18,9 +18,9 @@ class ReduxUsageFinder(
     private val project: Project,
     private val classifier: ReduxUsageClassifier = ReduxUsageClassifier()
 ) {
-    fun buildGraph(action: ActionInfo): ActionGraph = ReadAction.compute<ActionGraph, RuntimeException> {
+    fun buildGraph(action: ActionInfo): ActionGraph = ReadAction.nonBlocking<ActionGraph> {
         computeGraph(action)
-    }
+    }.executeSynchronously()
 
     internal fun computeGraph(action: ActionInfo): ActionGraph {
         val declaration = action.declaration?.element ?: return ActionGraph(action, emptyList())

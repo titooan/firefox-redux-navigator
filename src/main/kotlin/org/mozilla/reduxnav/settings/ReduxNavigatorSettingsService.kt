@@ -1,6 +1,5 @@
 package org.mozilla.reduxnav.settings
 
-import com.intellij.codeInsight.codeVision.CodeVisionHost
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.hints.codeVision.ModificationStampUtil
 import com.intellij.openapi.fileEditor.FileDocumentManager
@@ -10,7 +9,6 @@ import com.intellij.openapi.components.PersistentStateComponent
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
-import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFile
@@ -52,9 +50,6 @@ class ReduxNavigatorSettingsService : PersistentStateComponent<ReduxNavigatorSet
         logger.info("[redux-nav] settings-refresh codeVision start openProjects=${ProjectManager.getInstance().openProjects.size}")
         ProjectManager.getInstance().openProjects.forEach { project ->
             logger.info("[redux-nav] settings-refresh codeVision project=${project.name} path=${project.basePath}")
-            val host = project.service<CodeVisionHost>()
-            logger.info("[redux-nav] settings-refresh codeVision host=${host.javaClass.name}")
-            host.recollectAndRearrangeProviders()
             val fileEditorManager = FileEditorManager.getInstance(project)
             val fileDocumentManager = FileDocumentManager.getInstance()
             val psiDocumentManager = PsiDocumentManager.getInstance(project)
@@ -77,7 +72,7 @@ class ReduxNavigatorSettingsService : PersistentStateComponent<ReduxNavigatorSet
                             logger.info("[redux-nav] settings-refresh stamp-cleared editor=${virtualFile.path}")
                         }
                     }
-                    DaemonCodeAnalyzer.getInstance(project).restart(psiFile)
+                    DaemonCodeAnalyzer.getInstance(project).restart(psiFile, "Redux Navigator settings changed")
                 }
             }
         }

@@ -69,14 +69,14 @@ class ReduxCodePreviewPanel(
             return
         }
 
-        val preview = ReadAction.compute<PreviewData?, RuntimeException> {
+        val preview = ReadAction.nonBlocking<PreviewData?> {
             when (target) {
                 is DiagramNodeTarget.ActionTarget -> previewDataFor(target.action.declaration?.element)
                 is DiagramNodeTarget.ModificationTarget -> previewDataFor(target.modification.modificationPointer.element)
                 is DiagramNodeTarget.StateFieldTarget -> previewDataFor(target.field.declarationPointer?.element)
                 is DiagramNodeTarget.UsageTarget -> previewDataFor(target.usage.element.element)
             }
-        }
+        }.executeSynchronously()
 
         if (preview == null) {
             showMessage("Preview is unavailable for the selected node.")
@@ -91,9 +91,9 @@ class ReduxCodePreviewPanel(
     }
 
     fun showElement(element: PsiElement?) {
-        val preview = ReadAction.compute<PreviewData?, RuntimeException> {
+        val preview = ReadAction.nonBlocking<PreviewData?> {
             previewDataFor(element)
-        }
+        }.executeSynchronously()
 
         if (preview == null) {
             showMessage("Preview is unavailable for the selected node.")

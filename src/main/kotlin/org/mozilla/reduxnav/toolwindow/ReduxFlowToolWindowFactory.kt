@@ -1,6 +1,5 @@
 package org.mozilla.reduxnav.toolwindow
 
-import com.intellij.ide.DataManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
@@ -15,7 +14,6 @@ class ReduxFlowToolWindowFactory : ToolWindowFactory {
             isOpaque = false
             add(service.component, BorderLayout.CENTER)
         }
-        DataManager.registerDataProvider(host, service.component)
         val content = ContentFactory.getInstance().createContent(host, "", false)
         content.setDisposer(service.component)
         toolWindow.contentManager.addContent(content)
