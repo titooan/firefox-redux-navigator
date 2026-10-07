@@ -37,6 +37,10 @@ kotlin {
 intellijPlatform {
     instrumentCode = false
 
+    publishing {
+        token = providers.environmentVariable("JETBRAINS_MARKETPLACE_TOKEN")
+    }
+
     pluginVerification {
         ides {
             create(IntelliJPlatformType.IntellijIdea, "262.9437.22")

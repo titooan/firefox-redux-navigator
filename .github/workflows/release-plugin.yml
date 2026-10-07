@@ -72,3 +72,16 @@ jobs:
               --title "$TAG_NAME" \
               --generate-notes
           fi
+
+      - name: Publish to JetBrains Marketplace
+        continue-on-error: true
+        env:
+          JETBRAINS_MARKETPLACE_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+          PLUGIN_VERSION: ${{ steps.version.outputs.plugin_version }}
+        run: |
+          if [[ -z "$JETBRAINS_MARKETPLACE_TOKEN" ]]; then
+            echo "JETBRAINS_MARKETPLACE_TOKEN is not configured; skipping Marketplace publication."
+            exit 0
+          fi
+
+          ./gradlew publishPlugin -PpluginVersion="$PLUGIN_VERSION"
