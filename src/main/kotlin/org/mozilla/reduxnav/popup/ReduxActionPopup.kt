@@ -210,11 +210,21 @@ object ReduxActionPopup {
     ): UsagePresentation {
         val background = if (selected) null else testOccurrenceBackground(usage.filePath)
         val icon = FileTypeManager.getInstance().getFileTypeByFileName(usage.fileName).icon
+        val handledActions = usage.handledActions.joinToString(", ") { match ->
+            if (match.coversDescendants) "${match.actionName} (all child actions)" else match.actionName
+        }
+        val codeHtml = highlightedCodeHtml(usage.displayText, actionName)
+        val attributedCodeHtml = if (handledActions.isBlank()) {
+            codeHtml
+        } else {
+            val relationship = if (usage.kind == ReduxUsageKind.OTHER) "references" else "handles"
+            "${codeHtml.removeSuffix("</html>")} <span style='color:#808080'>$relationship ${escapeHtml(handledActions)}</span></html>"
+        }
         return UsagePresentation(
             icon = icon,
             fileName = usage.fileName,
             lineNumber = usage.line.toString(),
-            codeHtml = highlightedCodeHtml(usage.displayText, actionName),
+            codeHtml = attributedCodeHtml,
             background = background
         )
     }

@@ -4,6 +4,7 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.mozilla.reduxnav.model.ActionId
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
+import org.mozilla.reduxnav.model.ReduxUsageActionMatch
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.model.toSmartPointer
 import java.awt.Point
@@ -242,6 +243,30 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
         assertEquals("DownloadActionsTest.kt", usage.fileName)
         assertEquals(ReduxActionPopup.testOccurrenceBackground(usage.filePath), presentation.background)
         assertEquals("<html>dispatch(<b>AddItemForRemoval</b>)</html>", presentation.codeHtml)
+    }
+
+    fun testUsagePresentationShowsActionHandlingAttribution() {
+        val usage = usage("is MessagingAction.Evaluate", ReduxUsageKind.MIDDLEWARE).copy(
+            handledActions = listOf(ReduxUsageActionMatch("MessagingAction.Evaluate"))
+        )
+
+        val presentation = ReduxActionPopup.usagePresentation(usage, "MessagingAction", false)
+
+        assertTrue(presentation.codeHtml.contains("handles MessagingAction.Evaluate"))
+        assertTrue(presentation.codeHtml.indexOf("handles MessagingAction.Evaluate") < presentation.codeHtml.lastIndexOf("</html>"))
+    }
+
+    fun testOtherReferencesAreNotDescribedAsHandlingTheAction() {
+        val usage = usage("val actionType = MessagingAction", ReduxUsageKind.OTHER).copy(
+            handledActions = listOf(
+                ReduxUsageActionMatch("MessagingAction", coversDescendants = true)
+            )
+        )
+
+        val presentation = ReduxActionPopup.usagePresentation(usage, "MessagingAction", false)
+
+        assertTrue(presentation.codeHtml.contains("references MessagingAction (all child actions)"))
+        assertFalse(presentation.codeHtml.contains("handles MessagingAction"))
     }
 
     fun testLoadingEntriesShowsPlaceholderHeader() {

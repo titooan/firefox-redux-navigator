@@ -27,7 +27,13 @@ data class ReduxUsage(
     val fileName: String,
     val filePath: String,
     val line: Int,
-    val element: SmartPsiElementPointer<PsiElement>
+    val element: SmartPsiElementPointer<PsiElement>,
+    val handledActions: List<ReduxUsageActionMatch> = emptyList()
+)
+
+data class ReduxUsageActionMatch(
+    val actionName: String,
+    val coversDescendants: Boolean = false
 )
 
 data class ActionGraph(
