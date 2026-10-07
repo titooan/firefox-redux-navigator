@@ -33,6 +33,7 @@ class ReduxCodePreviewPanel(
     private var editor: EditorEx? = null
     private var currentDocument: Document? = null
     private var currentFilePath: String = ""
+    private var currentPreviewIdentity: PreviewIdentity? = null
     private var previewRequestId: Long = 0
     private val messageLabel = JBLabel("Select a Redux flow node to preview its source.").apply {
         border = JBUI.Borders.empty(12)
@@ -70,7 +71,6 @@ class ReduxCodePreviewPanel(
             return
         }
 
-        showMessage("Loading source preview...")
         submitModelRead(project, {
             when (target) {
                 is DiagramNodeTarget.ActionTarget -> previewDataFor(target.action.declaration?.element)
@@ -80,7 +80,11 @@ class ReduxCodePreviewPanel(
             }
         }) { preview ->
             if (requestId != previewRequestId || project.isDisposed) return@submitModelRead
-            if (preview == null) showMessage("Preview is unavailable for the selected node.") else showPreview(preview)
+            if (preview == null) {
+                showMessage("Preview is unavailable for the selected node.")
+            } else if (preview.identity != currentPreviewIdentity) {
+                showPreview(preview)
+            }
         }
     }
 
@@ -90,12 +94,15 @@ class ReduxCodePreviewPanel(
 
     fun showElement(element: PsiElement?) {
         val requestId = ++previewRequestId
-        showMessage("Loading source preview...")
         submitModelRead(project, {
             previewDataFor(element)
         }) { preview ->
             if (requestId != previewRequestId || project.isDisposed) return@submitModelRead
-            if (preview == null) showMessage("Preview is unavailable for the selected node.") else showPreview(preview)
+            if (preview == null) {
+                showMessage("Preview is unavailable for the selected node.")
+            } else if (preview.identity != currentPreviewIdentity) {
+                showPreview(preview)
+            }
         }
     }
 
@@ -110,11 +117,13 @@ class ReduxCodePreviewPanel(
             offset = validElement.textOffset,
             lineStartOffset = document.getLineStartOffset(line),
             lineEndOffset = document.getLineEndOffset(line),
-            displayPath = displayPathFor(file)
+            displayPath = displayPathFor(file),
+            identity = PreviewIdentity(file.url, document.getLineStartOffset(line), document.getLineEndOffset(line))
         )
     }
 
     private fun showPreview(preview: PreviewData) {
+        currentPreviewIdentity = preview.identity
         val viewer = ensureViewer(preview.document, preview.file)
         if (componentCount == 0 || getComponent(0) !== headerPanel) {
             removeAll()
@@ -170,6 +179,7 @@ class ReduxCodePreviewPanel(
         fileLabel.text = ""
         pathLabel.text = ""
         currentFilePath = ""
+        currentPreviewIdentity = null
         add(messageLabel.apply { text = message }, BorderLayout.CENTER)
         revalidate()
         repaint()
@@ -210,7 +220,14 @@ class ReduxCodePreviewPanel(
         val offset: Int,
         val lineStartOffset: Int,
         val lineEndOffset: Int,
-        val displayPath: String
+        val displayPath: String,
+        val identity: PreviewIdentity
+    )
+
+    private data class PreviewIdentity(
+        val fileUrl: String,
+        val lineStartOffset: Int,
+        val lineEndOffset: Int
     )
 
     private fun scrollToPreviewLine(viewer: EditorEx, preview: PreviewData) {
