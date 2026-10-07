@@ -8,6 +8,24 @@ import org.mozilla.reduxnav.model.ReduxUsageActionMatch
 import org.mozilla.reduxnav.model.ReduxUsageKind
 
 class ReduxUsageFinderTest : BasePlatformTestCase() {
+    fun testSealedActionRecordsDescendantsEvenWithoutRelatedUsages() {
+        myFixture.addFileToProject(
+            "EmptyHierarchy.kt",
+            """
+            sealed class EmptyAction {
+                sealed class Nested : EmptyAction() {
+                    data object Leaf : Nested()
+                }
+            }
+            """.trimIndent()
+        )
+
+        val graph = ReduxUsageFinder(project).computeGraph(resolveAction("EmptyHierarchy.kt", "EmptyAction"))
+
+        assertTrue(graph.usages.isEmpty())
+        assertEquals(setOf("EmptyAction.Nested", "EmptyAction.Nested.Leaf"), graph.descendantActionNames)
+    }
+
     fun testSealedActionFindsMiddlewareForDirectAndNestedChildren() {
         myFixture.addFileToProject(
             "AppAction.kt",
@@ -59,6 +77,15 @@ class ReduxUsageFinderTest : BasePlatformTestCase() {
         )
 
         val graph = ReduxUsageFinder(project).computeGraph(resolveAction("AppAction.kt", "MessagingAction"))
+        assertEquals(
+            setOf(
+                "MessagingAction.Restore",
+                "MessagingAction.Evaluate",
+                "MessagingAction.MicrosurveyAction",
+                "MessagingAction.MicrosurveyAction.Started"
+            ),
+            graph.descendantActionNames
+        )
         val middlewareUsages = graph.usages.filter { it.kind == ReduxUsageKind.MIDDLEWARE }
 
         assertEquals(3, middlewareUsages.size)

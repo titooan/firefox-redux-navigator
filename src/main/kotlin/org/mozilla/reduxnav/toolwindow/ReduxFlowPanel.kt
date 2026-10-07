@@ -93,6 +93,10 @@ class ReduxFlowPanel(
     private val includeTestsModel = JToggleButton.ToggleButtonModel().apply {
         isSelected = false
     }
+    private val includeChildActionsModel = JToggleButton.ToggleButtonModel().apply {
+        isSelected = false
+    }
+    private val childActionCheckboxes = mutableListOf<JBCheckBox>()
     private val inlineControls = createControlsRow(wrap = false)
     private val stackedControls = createControlsRow(wrap = true)
     private val secondaryHeaderRow = JPanel(BorderLayout()).apply {
@@ -150,6 +154,7 @@ class ReduxFlowPanel(
         isFocusable = true
         isRequestFocusEnabled = true
         includeTestsModel.addActionListener { rerenderCurrentGraph() }
+        includeChildActionsModel.addActionListener { rerenderCurrentGraph() }
         installActivationForwarding()
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addPropertyChangeListener("focusOwner", focusOwnerListener)
         add(headerPanel, BorderLayout.NORTH)
@@ -159,6 +164,7 @@ class ReduxFlowPanel(
     }
 
     fun showEmptyState() {
+        setChildActionFilterVisible(false)
         currentAction = null
         currentGraph = null
         currentStateGraph = null
@@ -178,6 +184,7 @@ class ReduxFlowPanel(
     }
 
     fun showInvalidAction(action: ActionInfo) {
+        setChildActionFilterVisible(false)
         currentAction = action
         currentGraph = null
         currentStateGraph = null
@@ -196,6 +203,7 @@ class ReduxFlowPanel(
     }
 
     fun showActionLoading(action: ActionInfo) {
+        setChildActionFilterVisible(false)
         currentAction = action
         currentGraph = null
         currentStateGraph = null
@@ -215,6 +223,7 @@ class ReduxFlowPanel(
     }
 
     fun showAnalysisError(action: ActionInfo) {
+        setChildActionFilterVisible(false)
         currentAction = action
         currentGraph = null
         currentStateGraph = null
@@ -245,6 +254,7 @@ class ReduxFlowPanel(
     }
 
     fun showInvalidState(field: StateFieldInfo) {
+        setChildActionFilterVisible(false)
         currentStateGraph = null
         currentAction = null
         currentGraph = null
@@ -263,6 +273,7 @@ class ReduxFlowPanel(
     }
 
     fun showStateAnalysisError(field: StateFieldInfo) {
+        setChildActionFilterVisible(false)
         currentStateGraph = null
         currentAction = null
         currentGraph = null
@@ -281,6 +292,7 @@ class ReduxFlowPanel(
     }
 
     fun showStateLoading(field: StateFieldInfo) {
+        setChildActionFilterVisible(false)
         currentStateGraph = null
         currentAction = null
         currentGraph = null
@@ -299,6 +311,7 @@ class ReduxFlowPanel(
     }
 
     fun showStateGraph(graph: StateFieldGraph) {
+        setChildActionFilterVisible(false)
         currentStateGraph = graph
         currentGraph = null
         currentAction = null
@@ -315,6 +328,7 @@ class ReduxFlowPanel(
     }
 
     internal fun renderCurrentGraph(graph: ActionGraph) {
+        setChildActionFilterVisible(graph.descendantActionNames.isNotEmpty())
         val visibleGraph = filteredGraph(graph)
         try {
             val reduxGraph = reduxGraphBuilder.build(visibleGraph)
@@ -413,6 +427,14 @@ class ReduxFlowPanel(
                 JBCheckBox("Include Tests").apply {
                     isOpaque = false
                     model = includeTestsModel
+                }
+            )
+            add(
+                JBCheckBox("Include child actions").apply {
+                    isOpaque = false
+                    model = includeChildActionsModel
+                    isVisible = false
+                    childActionCheckboxes += this
                 }
             )
             add(
@@ -529,10 +551,9 @@ class ReduxFlowPanel(
     }
 
     private fun filteredGraph(graph: ActionGraph): ActionGraph =
-        if (includeTestsModel.isSelected) {
-            graph
-        } else {
-            graph.copy(usages = graph.usages.filterNot { isTestPath(it.filePath) })
+        graph.withChildActionsIncluded(includeChildActionsModel.isSelected).let { childFilteredGraph ->
+            if (includeTestsModel.isSelected) childFilteredGraph
+            else childFilteredGraph.copy(usages = childFilteredGraph.usages.filterNot { isTestPath(it.filePath) })
         }
 
     private fun filteredStateGraph(graph: StateFieldGraph): StateFieldGraph =
@@ -572,6 +593,15 @@ class ReduxFlowPanel(
     }
 
     internal fun includesTestsForTest(): Boolean = includeTestsModel.isSelected
+
+    internal fun setIncludeChildActionsForTest(include: Boolean) {
+        includeChildActionsModel.isSelected = include
+        rerenderCurrentGraph()
+    }
+
+    internal fun includesChildActionsForTest(): Boolean = includeChildActionsModel.isSelected
+
+    internal fun childActionFilterVisibleForTest(): Boolean = childActionCheckboxes.any { it.isVisible }
 
     internal fun headerUsesCompactLayout(): Boolean = secondaryHeaderRow.isVisible
 
@@ -643,6 +673,12 @@ class ReduxFlowPanel(
         listOf(inlineControls, stackedControls)
             .flatMap { panel -> panel.components.toList() }
             .filterIsInstance<JButton>()
+
+    private fun setChildActionFilterVisible(visible: Boolean) {
+        childActionCheckboxes.forEach { it.isVisible = visible }
+        inlineControls.revalidate()
+        stackedControls.revalidate()
+    }
 
     private fun ensureFlowTabVisible(visible: Boolean) {
         val currentIndex = indexOfTab("Flow")

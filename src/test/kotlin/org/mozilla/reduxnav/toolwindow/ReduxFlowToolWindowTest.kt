@@ -9,6 +9,7 @@ import org.mozilla.reduxnav.graph.ReduxGraphBuilder
 import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
+import org.mozilla.reduxnav.model.ReduxUsageActionMatch
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.model.toSmartPointer
 import org.mozilla.reduxnav.nativeflow.DiagramNodeTarget
@@ -95,6 +96,68 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
                 }
             }
         )
+    }
+
+    fun testReduxFlowPanelChildActionFilterDefaultsToDirectMatchesAndCanIncludeChildren() {
+        val action = actionInfo("ParentAction")
+        val direct = usage("Direct.kt", "/work/Direct.kt", 2, ReduxUsageKind.MIDDLEWARE).copy(
+            displayText = "handles ParentAction",
+            handledActions = listOf(ReduxUsageActionMatch("ParentAction", coversDescendants = true))
+        )
+        val child = usage("Child.kt", "/work/Child.kt", 3, ReduxUsageKind.MIDDLEWARE).copy(
+            displayText = "handles ParentAction.Child",
+            handledActions = listOf(ReduxUsageActionMatch("ParentAction.Child"))
+        )
+        val directAndChild = usage("Both.kt", "/work/Both.kt", 4, ReduxUsageKind.REDUCER).copy(
+            displayText = "handles ParentAction and ParentAction.Child",
+            handledActions = listOf(
+                ReduxUsageActionMatch("ParentAction", coversDescendants = true),
+                ReduxUsageActionMatch("ParentAction.Child")
+            )
+        )
+        val graph = ActionGraph(
+            action,
+            listOf(direct, child, directAndChild),
+            descendantActionNames = setOf("ParentAction.Child")
+        )
+        val panel = ReduxFlowPanel(project) {}
+
+        panel.showGraph(graph)
+
+        assertTrue(panel.childActionFilterVisibleForTest())
+        assertFalse(panel.includesChildActionsForTest())
+        var visibleUsages = panel.diagramNodeTargetsForTest().values
+            .filterIsInstance<DiagramNodeTarget.UsageTarget>()
+            .map { it.usage }
+        assertEquals(setOf("handles ParentAction", "handles ParentAction and ParentAction.Child"), visibleUsages.map { it.displayText }.toSet())
+        assertEquals(
+            listOf("ParentAction"),
+            visibleUsages.single { it.displayText.contains(" and ") }.handledActions.map { it.actionName }
+        )
+
+        panel.setIncludeChildActionsForTest(true)
+
+        assertEquals(3, panel.diagramNodeTargetsForTest().values.filterIsInstance<DiagramNodeTarget.UsageTarget>().size)
+        assertTrue(panel.includesChildActionsForTest())
+    }
+
+    fun testReduxFlowPanelHidesChildCheckboxForOrdinaryActions() {
+        val panel = ReduxFlowPanel(project) {}
+        panel.showGraph(ActionGraph(actionInfo("OrdinaryAction"), emptyList()))
+        assertFalse(panel.childActionFilterVisibleForTest())
+    }
+
+    fun testReduxFlowPanelShowsChildCheckboxForHierarchyWithoutUsages() {
+        val panel = ReduxFlowPanel(project) {}
+        panel.showGraph(
+            ActionGraph(
+                actionInfo("EmptyParentAction"),
+                emptyList(),
+                descendantActionNames = setOf("EmptyParentAction.Child")
+            )
+        )
+        assertTrue(panel.childActionFilterVisibleForTest())
+        assertFalse(panel.includesChildActionsForTest())
     }
 
     fun testNavigationLinkInvokesCallback() {

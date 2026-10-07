@@ -2,6 +2,7 @@ package org.mozilla.reduxnav.popup
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import org.mozilla.reduxnav.model.ActionId
+import org.mozilla.reduxnav.model.ActionGraph
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageActionMatch
@@ -13,6 +14,7 @@ import java.awt.Container
 import java.awt.event.MouseEvent
 import java.io.File
 import javax.swing.JButton
+import javax.swing.JCheckBox
 import javax.swing.JComboBox
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -94,6 +96,110 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
             ),
             entries.map { entryLabel(it) }
         )
+    }
+
+    fun testChildActionFilterHidesChildOnlyItemsButKeepsDirectMatches() {
+        val direct = usage("when (action) is ParentAction", ReduxUsageKind.MIDDLEWARE).copy(
+            handledActions = listOf(ReduxUsageActionMatch("ParentAction", coversDescendants = true))
+        )
+        val childOnly = usage("is ParentAction.Child", ReduxUsageKind.REDUCER).copy(
+            handledActions = listOf(ReduxUsageActionMatch("ParentAction.Child"))
+        )
+        val directAndChild = usage("when (action) is ParentAction", ReduxUsageKind.MIDDLEWARE).copy(
+            handledActions = listOf(
+                ReduxUsageActionMatch("ParentAction", coversDescendants = true),
+                ReduxUsageActionMatch("ParentAction.Child")
+            )
+        )
+        val action = ActionInfo(ActionId("ParentAction"), "ParentAction", null)
+        val list = ReduxActionPopup.createList(ReduxActionPopup.loadingEntries())
+        val controller = PopupListController(list)
+        val toolbar = ReduxActionPopup.createToolbar(project, action, controller)
+        val childCheckbox = findCheckBox(toolbar, "Include child actions")
+
+        assertNotNull(childCheckbox)
+        assertFalse(childCheckbox!!.isVisible)
+        controller.replaceGraph(
+            ActionGraph(
+                action,
+                listOf(direct, childOnly, directAndChild),
+                descendantActionNames = setOf("ParentAction.Child")
+            )
+        )
+
+        assertTrue(childCheckbox.isVisible)
+        assertFalse(childCheckbox.isSelected)
+        val filteredEntries = modelEntries(list)
+        assertEquals(listOf(direct.displayText, directAndChild.displayText), filteredEntries.map { it.usage.displayText })
+        assertEquals(
+            listOf("ParentAction"),
+            filteredEntries.last().usage.handledActions.map { it.actionName }
+        )
+
+        childCheckbox.doClick()
+
+        assertEquals(3, modelEntries(list).size)
+        assertTrue(controller.filterState.includeChildActions)
+    }
+
+    fun testChildActionCheckboxAppearsForHierarchyWithoutUsages() {
+        val action = ActionInfo(ActionId("EmptyParent"), "EmptyParent", null)
+        val list = ReduxActionPopup.createList(ReduxActionPopup.loadingEntries())
+        val controller = PopupListController(list)
+        val toolbar = ReduxActionPopup.createToolbar(project, action, controller)
+        val childCheckbox = findCheckBox(toolbar, "Include child actions")
+        assertNotNull(childCheckbox)
+        assertFalse(childCheckbox!!.isVisible)
+
+        controller.replaceGraph(
+            ActionGraph(action, emptyList(), descendantActionNames = setOf("EmptyParent.Child"))
+        )
+
+        assertTrue(childCheckbox.isVisible)
+        assertTrue(modelEntries(list).isEmpty())
+    }
+
+    fun testChildActionFilterComposesWithProductionFileScope() {
+        val directProduction = usage(
+            "is ParentAction",
+            ReduxUsageKind.MIDDLEWARE,
+            "/work/project/src/main/kotlin/ParentMiddleware.kt"
+        ).copy(handledActions = listOf(ReduxUsageActionMatch("ParentAction", coversDescendants = true)))
+        val childProduction = usage(
+            "is ParentAction.Child",
+            ReduxUsageKind.REDUCER,
+            "/work/project/src/main/kotlin/ParentReducer.kt"
+        ).copy(handledActions = listOf(ReduxUsageActionMatch("ParentAction.Child")))
+        val childTest = usage(
+            "is ParentAction.TestChild",
+            ReduxUsageKind.REDUCER,
+            "/work/project/src/test/kotlin/ParentReducerTest.kt"
+        ).copy(handledActions = listOf(ReduxUsageActionMatch("ParentAction.TestChild")))
+        val usages = listOf(directProduction, childProduction, childTest)
+        val descendantNames = setOf("ParentAction.Child", "ParentAction.TestChild")
+
+        val directOnly = ReduxActionPopup.buildEntries(
+            usages,
+            actionName = "ParentAction",
+            filterState = PopupFilterState(fileScope = UsageFileScope.PRODUCTION),
+            descendantActionNames = descendantNames
+        ).filterIsInstance<PopupEntry.UsageEntry>()
+        assertEquals(listOf(directProduction.filePath), directOnly.map { it.usage.filePath })
+
+        val childrenIncluded = ReduxActionPopup.buildEntries(
+            usages,
+            actionName = "ParentAction",
+            filterState = PopupFilterState(
+                fileScope = UsageFileScope.PRODUCTION,
+                includeChildActions = true
+            ),
+            descendantActionNames = descendantNames
+        ).filterIsInstance<PopupEntry.UsageEntry>()
+        assertEquals(
+            setOf(directProduction.filePath, childProduction.filePath),
+            childrenIncluded.map { it.usage.filePath }.toSet()
+        )
+        assertFalse(childrenIncluded.any { it.usage.filePath == childTest.filePath })
     }
 
     fun testBuildEntriesCanRestrictToProductionFiles() {
@@ -351,6 +457,19 @@ class ReduxActionPopupTest : BasePlatformTestCase() {
             is PopupEntry.Header -> "${if (entry.expanded) "▼" else "▶"} ${entry.text}"
             is PopupEntry.UsageEntry -> entry.usage.displayText
         }
+    }
+
+    private fun modelEntries(list: javax.swing.JList<PopupEntry>): List<PopupEntry.UsageEntry> =
+        (0 until list.model.size).map { list.model.getElementAt(it) }.filterIsInstance<PopupEntry.UsageEntry>()
+
+    private fun findCheckBox(component: Component, text: String): JCheckBox? {
+        if (component is JCheckBox && component.text == text) return component
+        if (component is Container) {
+            component.components.forEach { child ->
+                findCheckBox(child, text)?.let { return it }
+            }
+        }
+        return null
     }
 
     private fun findButton(component: Component, text: String): JButton? {

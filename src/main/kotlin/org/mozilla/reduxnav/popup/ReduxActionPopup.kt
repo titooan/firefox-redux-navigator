@@ -248,10 +248,16 @@ object ReduxActionPopup {
     internal fun buildEntries(
         usages: List<ReduxUsage>,
         actionName: String = "",
-        filterState: PopupFilterState = PopupFilterState()
+        filterState: PopupFilterState = PopupFilterState(),
+        descendantActionNames: Set<String> = emptySet()
     ): List<PopupEntry> {
         val result = mutableListOf<PopupEntry>()
-        val filteredUsages = usages.filter { filterState.fileScope.accepts(it.filePath) }
+        val actionGraph = ActionGraph(
+            action = ActionInfo(org.mozilla.reduxnav.model.ActionId(actionName), actionName, null),
+            usages = usages,
+            descendantActionNames = descendantActionNames
+        ).withChildActionsIncluded(filterState.includeChildActions)
+        val filteredUsages = actionGraph.usages.filter { filterState.fileScope.accepts(it.filePath) }
         val grouped = filteredUsages.groupBy { it.kind }
 
         orderedUsageKinds().forEach { kind ->
@@ -317,16 +323,25 @@ object ReduxActionPopup {
         }
         panel.add(scopeSelector, constraints(1, 0.0, GridBagConstraints.WEST))
 
+        val childActionsCheckbox = JCheckBox("Include child actions", controller.filterState.includeChildActions).apply {
+            isOpaque = false
+            isVisible = false
+            border = JBUI.Borders.emptyLeft(8)
+            addActionListener { controller.setChildActionsIncluded(isSelected) }
+        }
+        controller.bindChildActionsCheckbox(childActionsCheckbox)
+        panel.add(childActionsCheckbox, constraints(2, 0.0, GridBagConstraints.WEST))
+
         orderedUsageKinds().forEachIndexed { index, kind ->
             val checkbox = JCheckBox(kind.title, kind in controller.filterState.visibleKinds).apply {
                 isOpaque = false
                 border = JBUI.Borders.emptyLeft(8)
                 addActionListener { controller.setKindVisible(kind, isSelected) }
             }
-            panel.add(checkbox, constraints(index + 2, 0.0, GridBagConstraints.WEST))
+            panel.add(checkbox, constraints(index + 3, 0.0, GridBagConstraints.WEST))
         }
 
-        panel.add(JPanel().apply { isOpaque = false }, constraints(orderedUsageKinds().size + 2, 1.0, GridBagConstraints.WEST))
+        panel.add(JPanel().apply { isOpaque = false }, constraints(orderedUsageKinds().size + 3, 1.0, GridBagConstraints.WEST))
         return panel
     }
 
@@ -370,19 +385,42 @@ internal data class PopupFilterState(
         ReduxUsageKind.REDUCER,
         ReduxUsageKind.OTHER
     ),
-    val collapsedKinds: Set<ReduxUsageKind> = emptySet()
+    val collapsedKinds: Set<ReduxUsageKind> = emptySet(),
+    val includeChildActions: Boolean = false
 )
 
 internal class PopupListController(
     val list: JBList<PopupEntry>,
     private var actionName: String = "",
     private var allUsages: List<ReduxUsage> = emptyList(),
-    internal var filterState: PopupFilterState = PopupFilterState()
+    internal var filterState: PopupFilterState = PopupFilterState(),
+    private var descendantActionNames: Set<String> = emptySet(),
+    private var childActionsCheckbox: JCheckBox? = null
 ) {
     fun replaceUsages(usages: List<ReduxUsage>, actionName: String = this.actionName) {
         this.allUsages = usages
         this.actionName = actionName
         refresh()
+    }
+
+    fun replaceGraph(graph: ActionGraph) {
+        allUsages = graph.usages
+        actionName = graph.action.displayName
+        descendantActionNames = graph.descendantActionNames
+        childActionsCheckbox?.let { checkbox ->
+            checkbox.isVisible = descendantActionNames.isNotEmpty()
+            checkbox.parent?.let { toolbar ->
+                toolbar.setPreferredSize(null)
+                toolbar.revalidate()
+                toolbar.repaint()
+            }
+        }
+        refresh()
+    }
+
+    fun bindChildActionsCheckbox(checkbox: JCheckBox) {
+        childActionsCheckbox = checkbox
+        checkbox.isVisible = descendantActionNames.isNotEmpty()
     }
 
     fun updateScope(scope: UsageFileScope) {
@@ -401,6 +439,11 @@ internal class PopupListController(
         refresh()
     }
 
+    fun setChildActionsIncluded(include: Boolean) {
+        filterState = filterState.copy(includeChildActions = include)
+        refresh()
+    }
+
     fun toggle(kind: ReduxUsageKind) {
         filterState = ReduxActionPopup.toggleSection(filterState, kind)
         refresh()
@@ -409,7 +452,7 @@ internal class PopupListController(
     private fun refresh() {
         ReduxActionPopup.replaceEntries(
             list,
-            ReduxActionPopup.buildEntries(allUsages, actionName, filterState)
+            ReduxActionPopup.buildEntries(allUsages, actionName, filterState, descendantActionNames)
         )
     }
 }
@@ -477,7 +520,7 @@ private class JBPopupHandle(private val popup: JBPopup) : PopupHandle {
             .wrapProgress(indicator)
             .finishOnUiThread(ModalityState.any()) { graph ->
                 if (!popup.isVisible) return@finishOnUiThread
-                controller.replaceUsages(graph.usages, action.displayName)
+                controller.replaceGraph(graph)
                 popup.setSize(popup.content.preferredSize)
                 loadingRequest = null
             }

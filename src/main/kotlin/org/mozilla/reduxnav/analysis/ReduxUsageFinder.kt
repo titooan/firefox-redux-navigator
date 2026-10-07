@@ -91,7 +91,15 @@ class ReduxUsageFinder(
             .map { it.toReduxUsage() }
             .sortedWith(compareBy<ReduxUsage> { it.kind.ordinal }.thenBy { it.filePath }.thenBy { it.line })
 
-        return ActionGraph(action, usages)
+        return ActionGraph(
+            action = action,
+            usages = usages,
+            descendantActionNames = if (isSealedHierarchy) {
+                targets.drop(1).mapTo(linkedSetOf()) { it.displayName }
+            } else {
+                emptySet()
+            }
+        )
     }
 
     private fun findActionHierarchy(

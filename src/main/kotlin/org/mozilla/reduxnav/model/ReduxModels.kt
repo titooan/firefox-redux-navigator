@@ -38,9 +38,21 @@ data class ReduxUsageActionMatch(
 
 data class ActionGraph(
     val action: ActionInfo,
-    val usages: List<ReduxUsage>
+    val usages: List<ReduxUsage>,
+    val descendantActionNames: Set<String> = emptySet()
 ) {
     fun grouped(): Map<ReduxUsageKind, List<ReduxUsage>> = usages.groupBy { it.kind }
+
+    fun withChildActionsIncluded(include: Boolean): ActionGraph {
+        if (include || descendantActionNames.isEmpty()) return this
+
+        val filteredUsages = usages.mapNotNull { usage ->
+            if (usage.handledActions.isEmpty()) return@mapNotNull usage
+            val directMatches = usage.handledActions.filter { it.actionName == action.displayName }
+            if (directMatches.isEmpty()) null else usage.copy(handledActions = directMatches)
+        }
+        return copy(usages = filteredUsages)
+    }
 }
 
 fun PsiElement.toSmartPointer(): SmartPsiElementPointer<PsiElement> =
