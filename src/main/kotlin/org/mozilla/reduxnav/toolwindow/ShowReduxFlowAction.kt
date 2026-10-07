@@ -20,13 +20,19 @@ class ShowReduxFlowAction : AnAction() {
         val project = event.project ?: return
         val editor = event.getData(CommonDataKeys.EDITOR) ?: return
         val file = event.getData(CommonDataKeys.PSI_FILE) ?: return
-        val action = resolveAction(project, editor, file)
-        if (action == null) {
-            StatusBar.Info.set("No Redux Action found at caret.", project)
-            return
+        val offset = editor.caretModel.offset
+        submitModelRead(project, {
+            if (!file.isValid) null else file.findElementAt(offset)?.let { element ->
+                resolver.resolve(element) ?: resolver.resolveDeclaration(element)
+            }
+        }) { action ->
+            if (project.isDisposed) return@submitModelRead
+            if (action == null) {
+                StatusBar.Info.set("No Redux Action found at caret.", project)
+            } else {
+                ReduxFlowToolWindowService.getInstance(project).showFlow(action)
+            }
         }
-
-        ReduxFlowToolWindowService.getInstance(project).showFlow(action)
     }
 
     override fun update(event: AnActionEvent) {
@@ -41,9 +47,9 @@ class ShowReduxFlowAction : AnAction() {
 
     internal fun resolveAction(project: Project, editor: Editor, file: PsiFile): ActionInfo? {
         val offset = editor.caretModel.offset
-        val element = ReadAction.nonBlocking<com.intellij.psi.PsiElement?> {
-            file.findElementAt(offset)
-        }.executeSynchronously() ?: return null
-        return resolver.resolve(element) ?: resolver.resolveDeclaration(element)
+        return ReadAction.nonBlocking<ActionInfo?> {
+            val element = file.findElementAt(offset) ?: return@nonBlocking null
+            resolver.resolve(element) ?: resolver.resolveDeclaration(element)
+        }.executeSynchronously()
     }
 }

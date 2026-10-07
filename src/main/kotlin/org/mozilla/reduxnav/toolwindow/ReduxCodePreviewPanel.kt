@@ -1,7 +1,6 @@
 package org.mozilla.reduxnav.toolwindow
 
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.LogicalPosition
@@ -34,6 +33,7 @@ class ReduxCodePreviewPanel(
     private var editor: EditorEx? = null
     private var currentDocument: Document? = null
     private var currentFilePath: String = ""
+    private var previewRequestId: Long = 0
     private val messageLabel = JBLabel("Select a Redux flow node to preview its source.").apply {
         border = JBUI.Borders.empty(12)
     }
@@ -64,43 +64,39 @@ class ReduxCodePreviewPanel(
     }
 
     fun showTarget(target: DiagramNodeTarget?) {
+        val requestId = ++previewRequestId
         if (target == null) {
             showMessage("Select a Redux flow node to preview its source.")
             return
         }
 
-        val preview = ReadAction.nonBlocking<PreviewData?> {
+        showMessage("Loading source preview...")
+        submitModelRead(project, {
             when (target) {
                 is DiagramNodeTarget.ActionTarget -> previewDataFor(target.action.declaration?.element)
                 is DiagramNodeTarget.ModificationTarget -> previewDataFor(target.modification.modificationPointer.element)
                 is DiagramNodeTarget.StateFieldTarget -> previewDataFor(target.field.declarationPointer?.element)
                 is DiagramNodeTarget.UsageTarget -> previewDataFor(target.usage.element.element)
             }
-        }.executeSynchronously()
-
-        if (preview == null) {
-            showMessage("Preview is unavailable for the selected node.")
-            return
+        }) { preview ->
+            if (requestId != previewRequestId || project.isDisposed) return@submitModelRead
+            if (preview == null) showMessage("Preview is unavailable for the selected node.") else showPreview(preview)
         }
-
-        showPreview(preview)
     }
 
     fun showAction(action: ActionInfo?) {
-        showElement(action?.declaration?.element)
+        if (action == null) showTarget(null) else showTarget(DiagramNodeTarget.ActionTarget(action))
     }
 
     fun showElement(element: PsiElement?) {
-        val preview = ReadAction.nonBlocking<PreviewData?> {
+        val requestId = ++previewRequestId
+        showMessage("Loading source preview...")
+        submitModelRead(project, {
             previewDataFor(element)
-        }.executeSynchronously()
-
-        if (preview == null) {
-            showMessage("Preview is unavailable for the selected node.")
-            return
+        }) { preview ->
+            if (requestId != previewRequestId || project.isDisposed) return@submitModelRead
+            if (preview == null) showMessage("Preview is unavailable for the selected node.") else showPreview(preview)
         }
-
-        showPreview(preview)
     }
 
     private fun previewDataFor(element: PsiElement?): PreviewData? {
@@ -186,6 +182,7 @@ class ReduxCodePreviewPanel(
     }
 
     override fun dispose() {
+        previewRequestId++
         releaseEditor()
     }
 

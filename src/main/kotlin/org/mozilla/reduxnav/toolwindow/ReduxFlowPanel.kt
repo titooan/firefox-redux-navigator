@@ -3,11 +3,9 @@ package org.mozilla.reduxnav.toolwindow
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DataSink
@@ -189,6 +187,25 @@ class ReduxFlowPanel(
         headerTitle.text = "Redux Flow: ${action.displayName}"
         renderMessage("The selected Redux Action is no longer valid. Re-run Show Redux Flow.")
         renderActionGraph(null)
+        resetCodePreview()
+        ensureFlowTabVisible(true)
+        ensureStateTabVisible(false)
+        setButtonsEnabled(false)
+        tabs.selectedIndex = GRAPH_TAB_INDEX
+        updateHeaderLayout()
+    }
+
+    fun showActionLoading(action: ActionInfo) {
+        currentAction = action
+        currentGraph = null
+        currentStateGraph = null
+        currentMermaid = ""
+        currentDiagramTargets = emptyMap()
+        currentPreviewTarget = null
+        headerTitle.text = "Redux Flow: ${action.displayName}"
+        renderMessage("Loading Redux flow...")
+        renderFlowGraph(null, emptyMessage = "Loading Redux flow...")
+        renderMermaid("")
         resetCodePreview()
         ensureFlowTabVisible(true)
         ensureStateTabVisible(false)
@@ -506,7 +523,7 @@ class ReduxFlowPanel(
     private fun showCodePreviewForModification(modification: StateModification) {
         currentPreviewTarget = null
         codePreviewPanel.isVisible = true
-        codePreviewPanel.showElement(modification.modificationPointer.element)
+        codePreviewPanel.showTarget(DiagramNodeTarget.ModificationTarget(modification))
         mainSplitter.revalidate()
         mainSplitter.repaint()
     }
@@ -801,39 +818,21 @@ class ReduxFlowPanel(
         ): ActionLink = ActionLink(text) { onNavigate() }
 
         internal fun navigateToUsage(project: Project, usage: ReduxUsage) {
-            val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
-                val element = usage.element.element ?: return@nonBlocking null
-                val file = element.containingFile?.virtualFile ?: return@nonBlocking null
-                OpenFileDescriptor(project, file, element.textOffset)
-            }.executeSynchronously() ?: return
-            descriptor.navigate(true)
+            navigateToPsiElement(project, "${usage.filePath}:${usage.line}", element = { usage.element.element })
         }
 
         internal fun navigateToAction(project: Project, action: ActionInfo) {
-            val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
-                val element = action.declaration?.element ?: return@nonBlocking null
-                val file = element.containingFile?.virtualFile ?: return@nonBlocking null
-                OpenFileDescriptor(project, file, element.textOffset)
-            }.executeSynchronously() ?: return
-            descriptor.navigate(true)
+            navigateToPsiElement(project, action.displayName, element = { action.declaration?.element })
         }
 
         internal fun navigateToModification(project: Project, modification: StateModification) {
-            val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
-                val element = modification.modificationPointer.element ?: return@nonBlocking null
-                val file = element.containingFile?.virtualFile ?: return@nonBlocking null
-                OpenFileDescriptor(project, file, element.textOffset)
-            }.executeSynchronously() ?: return
-            descriptor.navigate(true)
+            navigateToPsiElement(project, "${modification.fileName}:${modification.lineNumber}", element = {
+                modification.modificationPointer.element
+            })
         }
 
         internal fun navigateToStateField(project: Project, field: StateFieldInfo) {
-            val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
-                val element = field.declarationPointer?.element ?: return@nonBlocking null
-                val file = element.containingFile?.virtualFile ?: return@nonBlocking null
-                OpenFileDescriptor(project, file, element.textOffset)
-            }.executeSynchronously() ?: return
-            descriptor.navigate(true)
+            navigateToPsiElement(project, field.qualifiedPath, element = { field.declarationPointer?.element })
         }
 
         private fun countLabel(count: Int, singular: String, plural: String): String =

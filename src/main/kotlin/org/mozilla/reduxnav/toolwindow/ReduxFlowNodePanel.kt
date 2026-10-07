@@ -2,7 +2,6 @@ package org.mozilla.reduxnav.toolwindow
 
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.application.ReadAction
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBFont
@@ -79,7 +78,15 @@ class ReduxFlowNodePanel(
     }
 
     private fun createActionRow(action: ActionInfo): JComponent {
-        val rowData = ReadAction.nonBlocking<ActionRowData> {
+        val row = createRowComponent(
+            icon = FileTypeManager.getInstance().getFileTypeByFileName("Action.kt").icon,
+            fileName = "<unknown>",
+            lineNumber = "-",
+            codeHtml = ReduxActionPopup.highlightedCodeHtml(action.displayName, action.displayName),
+            rowBackground = null
+        )
+        installInteraction(row, DiagramNodeTarget.ActionTarget(action))
+        submitModelRead(project, {
             val declaration = action.declaration?.element
             ActionRowData(
                 fileName = declaration?.containingFile?.virtualFile?.name ?: "<unknown>",
@@ -89,19 +96,15 @@ class ReduxFlowNodePanel(
                     action.displayName
                 )
             )
-        }.executeSynchronously()
-        val icon = FileTypeManager.getInstance().getFileTypeByFileName(rowData.fileName).icon
-        val row = createRowComponent(
-            icon = icon,
-            fileName = rowData.fileName,
-            lineNumber = rowData.lineNumber,
-            codeHtml = rowData.codeHtml,
-            rowBackground = null
-        )
-        installInteraction(
-            row,
-            DiagramNodeTarget.ActionTarget(action)
-        )
+        }) { rowData ->
+            if (row.parent == null || project.isDisposed) return@submitModelRead
+            (row.getComponent(0) as? JLabel)?.icon = FileTypeManager.getInstance().getFileTypeByFileName(rowData.fileName).icon
+            (row.getComponent(1) as? JLabel)?.text = rowData.fileName
+            (row.getComponent(2) as? JLabel)?.text = rowData.lineNumber
+            (row.getComponent(3) as? JLabel)?.text = rowData.codeHtml
+            row.revalidate()
+            row.repaint()
+        }
         return row
     }
 

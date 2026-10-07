@@ -1,9 +1,7 @@
 package org.mozilla.reduxnav.graph
 
-import com.intellij.openapi.application.ReadAction
 import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
-import org.mozilla.reduxnav.model.lineText
 import org.mozilla.reduxnav.popup.isTestPath
 
 data class ReduxGraph(
@@ -78,12 +76,7 @@ sealed interface ReduxGraphNavigationTarget {
         val usage: ReduxUsage
     ) : ReduxGraphNavigationTarget {
         override val tooltipText: String
-            get() {
-                val lineText = ReadAction.nonBlocking<String> {
-                    usage.element.element?.lineText() ?: usage.displayText
-                }.executeSynchronously()
-                return "<html>${usage.fileName}:${usage.line}<br/>${escapeHtml(lineText)}</html>"
-            }
+            get() = "<html>${usage.fileName}:${usage.line}<br/>${escapeHtml(usage.displayText)}</html>"
     }
 
     data class ActionTarget(

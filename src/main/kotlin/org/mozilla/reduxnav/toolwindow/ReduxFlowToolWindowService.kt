@@ -7,7 +7,6 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
-import com.intellij.psi.PsiElement
 import com.intellij.ui.navigation.HistoryListener
 import com.intellij.ui.navigation.Place
 import org.mozilla.reduxnav.analysis.ReduxActionGraphCache
@@ -23,7 +22,7 @@ class ReduxFlowToolWindowService(private val project: Project) {
 
     private var selectedAction: ActionInfo? = null
     private var selectedStateField: StateFieldInfo? = null
-    private var stateRefreshRequestId: Long = 0
+    private var refreshRequestId: Long = 0
 
     init {
         historyController.history.addListener(
@@ -77,36 +76,45 @@ class ReduxFlowToolWindowService(private val project: Project) {
     }
 
     private fun refreshAction(action: ActionInfo) {
-        val declaration = ReadAction.nonBlocking<PsiElement?> {
-            action.declaration?.element?.takeIf { it.isValid }
-        }.executeSynchronously()
-        if (declaration == null || !declaration.isValid) {
-            component.showInvalidAction(action)
-            return
-        }
-        try {
-            val graph = ReduxActionGraphCache.getInstance(project).getGraph(action)
-            component.showGraph(graph)
-        } catch (t: Throwable) {
-            logger.warn("Could not build Redux flow for action ${action.displayName}", t)
-            component.showAnalysisError(action)
+        val requestId = ++refreshRequestId
+        component.showActionLoading(action)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = try {
+                val graph = ReadAction.nonBlocking<org.mozilla.reduxnav.model.ActionGraph?> {
+                    if (action.declaration?.element?.isValid != true) null
+                    else ReduxActionGraphCache.getInstance(project).getGraph(action)
+                }.executeSynchronously()
+                if (graph == null) ActionRefreshResult.Invalid else ActionRefreshResult.Graph(graph)
+            } catch (t: Throwable) {
+                logger.warn("Could not build Redux flow for action ${action.displayName}", t)
+                ActionRefreshResult.Error
+            }
+            ApplicationManager.getApplication().invokeLater({
+                if (!isLatestActionRequest(action, requestId)) return@invokeLater
+                when (result) {
+                    is ActionRefreshResult.Graph -> component.showGraph(result.graph)
+                    ActionRefreshResult.Invalid -> component.showInvalidAction(action)
+                    ActionRefreshResult.Error -> component.showAnalysisError(action)
+                }
+            }, project.disposed)
         }
     }
 
     private fun refreshState(field: StateFieldInfo) {
-        val declaration = ReadAction.nonBlocking<PsiElement?> {
-            field.declarationPointer?.element?.takeIf { it.isValid }
-        }.executeSynchronously()
-        if (field.declarationPointer != null && (declaration == null || !declaration.isValid)) {
-            component.showInvalidState(field)
-            return
-        }
-
-        val requestId = ++stateRefreshRequestId
+        val requestId = ++refreshRequestId
         component.showStateLoading(field)
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
-                val graph = StateModificationCache.getInstance(project).getGraph(field)
+                val graph = ReadAction.nonBlocking<org.mozilla.reduxnav.state.StateFieldGraph?> {
+                    if (field.declarationPointer != null && field.declarationPointer.element?.isValid != true) null
+                    else StateModificationCache.getInstance(project).getGraph(field)
+                }.executeSynchronously()
+                if (graph == null) {
+                    ApplicationManager.getApplication().invokeLater({
+                        if (isLatestStateRequest(field, requestId)) component.showInvalidState(field)
+                    }, project.disposed)
+                    return@executeOnPooledThread
+                }
                 ApplicationManager.getApplication().invokeLater(
                     {
                         if (!isLatestStateRequest(field, requestId)) return@invokeLater
@@ -129,9 +137,15 @@ class ReduxFlowToolWindowService(private val project: Project) {
 
     private fun isLatestStateRequest(field: StateFieldInfo, requestId: Long): Boolean =
         !project.isDisposed &&
-            requestId == stateRefreshRequestId &&
+            requestId == refreshRequestId &&
             selectedStateField?.id == field.id &&
             selectedAction == null
+
+    private fun isLatestActionRequest(action: ActionInfo, requestId: Long): Boolean =
+        !project.isDisposed &&
+            requestId == refreshRequestId &&
+            selectedAction?.id == action.id &&
+            selectedStateField == null
 
     private fun navigateFromHistory(location: ReduxPaneLocation, requestFocus: Boolean) {
         showLocation(location, recordHistory = false, requestFocus = requestFocus)
@@ -165,7 +179,7 @@ class ReduxFlowToolWindowService(private val project: Project) {
     internal fun resetForTest() {
         selectedAction = null
         selectedStateField = null
-        stateRefreshRequestId = 0
+        refreshRequestId = 0
         historyController.clear()
         component.showEmptyState()
         component.updatePaneHistoryStatus(canGoBack(), canGoForward())
@@ -175,5 +189,11 @@ class ReduxFlowToolWindowService(private val project: Project) {
         const val TOOL_WINDOW_ID = "Redux Flow"
 
         fun getInstance(project: Project): ReduxFlowToolWindowService = project.service()
+    }
+
+    private sealed interface ActionRefreshResult {
+        data class Graph(val graph: org.mozilla.reduxnav.model.ActionGraph) : ActionRefreshResult
+        data object Invalid : ActionRefreshResult
+        data object Error : ActionRefreshResult
     }
 }

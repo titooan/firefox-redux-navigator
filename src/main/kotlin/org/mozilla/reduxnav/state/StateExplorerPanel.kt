@@ -1,6 +1,5 @@
 package org.mozilla.reduxnav.state
 
-import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
@@ -13,6 +12,7 @@ import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.lineText
 import org.mozilla.reduxnav.model.safeLineNumber
 import org.mozilla.reduxnav.popup.ReduxActionPopup
+import org.mozilla.reduxnav.toolwindow.submitModelRead
 import java.awt.Component
 import java.awt.Container
 import java.awt.Cursor
@@ -159,7 +159,16 @@ class StateExplorerPanel(
     }
 
     private fun createActionRow(action: ActionInfo): JComponent {
-        val rowData = ReadAction.nonBlocking<ActionRowData> {
+        val fallbackIcon = FileTypeManager.getInstance().getFileTypeByFileName("Action.kt").icon
+        val row = createInteractiveRow(
+            icon = fallbackIcon,
+            fileName = "<unknown>",
+            lineNumber = "-",
+            codeHtml = noWrapHtml(ReduxActionPopup.highlightedCodeHtml(action.displayName, action.displayName)),
+            onSingleClick = { onActionSelected(action) },
+            onDoubleClick = { onActionNavigate(action) }
+        )
+        submitModelRead(project, {
             val declaration = action.declaration?.element
             val anchor = (declaration as? KtClassOrObject)?.nameIdentifier ?: declaration
             ActionRowData(
@@ -175,15 +184,16 @@ class StateExplorerPanel(
                     )
                 )
             )
-        }.executeSynchronously()
-        return createInteractiveRow(
-            icon = rowData.icon,
-            fileName = rowData.fileName,
-            lineNumber = rowData.lineNumber,
-            codeHtml = rowData.codeHtml,
-            onSingleClick = { onActionSelected(action) },
-            onDoubleClick = { onActionNavigate(action) }
-        )
+        }) { rowData ->
+            if (row.parent == null || project.isDisposed) return@submitModelRead
+            (row.getComponent(0) as? JLabel)?.icon = rowData.icon
+            (row.getComponent(1) as? JLabel)?.text = rowData.fileName
+            (row.getComponent(2) as? JLabel)?.text = rowData.lineNumber
+            (row.getComponent(3) as? JLabel)?.text = rowData.codeHtml
+            row.revalidate()
+            row.repaint()
+        }
+        return row
     }
 
     private fun createModificationRow(field: StateFieldInfo, modification: StateModification): JComponent {

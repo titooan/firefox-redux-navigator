@@ -144,6 +144,11 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
             panel.showGraph(graph)
             panel.previewCurrentTargetForTest(DiagramNodeTarget.UsageTarget(dispatch))
 
+            PlatformTestUtil.waitWithEventsDispatching(
+                "Code preview did not finish loading",
+                { panel.previewIsShowingEditorForTest() },
+                5_000
+            )
             assertTrue(panel.previewIsShowingEditorForTest())
             assertEquals("Dispatch.kt", panel.codePreviewFileNameForTest())
             assertTrue(panel.codePreviewFilePathForTest()?.contains("Dispatch.kt") == true)
@@ -201,8 +206,15 @@ class ReduxFlowToolWindowTest : BasePlatformTestCase() {
             panel.doLayout()
             panel.showGraph(graph)
             panel.previewCurrentTargetForTest(DiagramNodeTarget.UsageTarget(dispatch))
-            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
 
+            PlatformTestUtil.waitWithEventsDispatching(
+                "Code preview did not finish loading and scroll",
+                {
+                    panel.codePreviewCurrentLineForTest() == 61 &&
+                        (panel.codePreviewVisibleStartLineForTest() ?: -1) > 0
+                },
+                5_000
+            )
             assertEquals(61, panel.codePreviewCurrentLineForTest())
             assertTrue((panel.codePreviewVisibleStartLineForTest() ?: -1) > 0)
         } finally {

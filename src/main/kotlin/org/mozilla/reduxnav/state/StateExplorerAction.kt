@@ -9,9 +9,9 @@ import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.StatusBar
-import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import org.mozilla.reduxnav.toolwindow.ReduxFlowToolWindowService
+import org.mozilla.reduxnav.toolwindow.submitModelRead
 
 class StateExplorerAction : AnAction() {
     private val resolver = StateFieldResolver()
@@ -20,13 +20,17 @@ class StateExplorerAction : AnAction() {
         val project = event.project ?: return
         val editor = event.getData(CommonDataKeys.EDITOR) ?: return
         val file = event.getData(CommonDataKeys.PSI_FILE) ?: return
-        val field = resolveStateField(project, editor, file)
-        if (field == null) {
-            StatusBar.Info.set("No Redux state field found at caret.", project)
-            return
+        val offset = editor.caretModel.offset
+        submitModelRead(project, {
+            if (!file.isValid) null else file.findElementAt(offset)?.let(resolver::resolve)
+        }) { field ->
+            if (project.isDisposed) return@submitModelRead
+            if (field == null) {
+                StatusBar.Info.set("No Redux state field found at caret.", project)
+            } else {
+                ReduxFlowToolWindowService.getInstance(project).showState(field)
+            }
         }
-
-        ReduxFlowToolWindowService.getInstance(project).showState(field)
     }
 
     override fun update(event: AnActionEvent) {
@@ -41,9 +45,9 @@ class StateExplorerAction : AnAction() {
 
     internal fun resolveStateField(project: Project, editor: Editor, file: PsiFile): StateFieldInfo? {
         val offset = editor.caretModel.offset
-        val element = ReadAction.nonBlocking<PsiElement?> {
-            file.findElementAt(offset)
-        }.executeSynchronously() ?: return null
-        return resolver.resolve(element)
+        return ReadAction.nonBlocking<StateFieldInfo?> {
+            val element = file.findElementAt(offset) ?: return@nonBlocking null
+            resolver.resolve(element)
+        }.executeSynchronously()
     }
 }

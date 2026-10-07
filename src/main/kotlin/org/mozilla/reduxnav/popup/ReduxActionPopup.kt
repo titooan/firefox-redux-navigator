@@ -3,7 +3,6 @@ package org.mozilla.reduxnav.popup
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
@@ -22,6 +21,7 @@ import org.mozilla.reduxnav.model.ActionInfo
 import org.mozilla.reduxnav.model.ReduxUsage
 import org.mozilla.reduxnav.model.ReduxUsageKind
 import org.mozilla.reduxnav.toolwindow.ReduxFlowToolWindowService
+import org.mozilla.reduxnav.toolwindow.navigateToPsiElement
 import java.awt.Color
 import java.awt.Component
 import java.awt.Dimension
@@ -110,13 +110,16 @@ object ReduxActionPopup {
                     }
                     is PopupEntry.UsageEntry -> {
                         if (e.clickCount < 2) return
-                        val descriptor = ReadAction.nonBlocking<OpenFileDescriptor?> {
-                            val target = entry.usage.element.element ?: return@nonBlocking null
-                            val file = target.containingFile?.virtualFile ?: return@nonBlocking null
-                            OpenFileDescriptor(project, file, target.textOffset)
-                        }.executeSynchronously() ?: return
-                        descriptor.navigate(true)
-                        popup.cancel()
+                        logger.info(
+                            "[redux-nav] popup-navigate-start action=${action.displayName} " +
+                                "target=${entry.usage.filePath}:${entry.usage.line}"
+                        )
+                        navigateToPsiElement(
+                            project,
+                            "${entry.usage.filePath}:${entry.usage.line}",
+                            { entry.usage.element.element },
+                            afterNavigate = { if (popup.isVisible) popup.cancel() }
+                        )
                     }
                 }
             }
